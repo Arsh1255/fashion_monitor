@@ -13,6 +13,7 @@ ENV/
 # Environment Variables & Secrets
 .env
 .env.local
+.env.example
 
 # Output files & generated artifacts
 output/*
@@ -27,3 +28,17 @@ logs/*
 .idea/
 .DS_Store
 Thumbs.db
+
+# ignore individual files
+context.md
+debug_body.txt
+debug_data.md
+debug_accordion.py
+debug_accordion_output.txt
+mock_test.jpg
+output.txt
+plan.txt
+PROJECT_SPEC.md
+scratch_accordion_diag.py
+scratch_camoufox_test.py
+test_scrapper.py

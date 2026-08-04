@@ -1,0 +1,66 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260804212354
+Username: WINLAPTOP\Arsh
+RunAs User: WINLAPTOP\Arsh
+Configuration Name: 
+Machine: WINLAPTOP (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -noexit -command try { . "c:\Users\Arsh\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+Process ID: 12500
+PSVersion: 5.1.26100.8875
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8875
+BuildVersion: 10.0.26100.8875
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is ./output.txt
+]633;D;0]633;A]633;P;Cwd=D:\x5cfashion_monitorPS D:\fashion_monitor> ]633;B
+(venv) ls
+
+
+    Directory: D:\fashion_monitor
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        31-07-2026     14:14                .pytest_cache
+d-----        04-08-2026     18:18                assets
+da----        04-08-2026     20:34                data
+d-----        31-07-2026     14:16                logs
+d-----        04-08-2026     16:31                output
+d-----        04-08-2026     17:16                scratch
+d-----        04-08-2026     20:32                screenshots
+d-----        04-08-2026     17:16                src
+d-----        04-08-2026     17:16                tests
+d-----        31-07-2026     14:12                venv
+-a----        04-08-2026     20:29            878 .env
+-a----        02-08-2026     15:53            903 .env.example
+-a----        31-07-2026     14:01            348 .gitignore
+-a----        31-07-2026     13:20           9253 context.md
+-a----        04-08-2026     18:32           6211 debug_accordion.py
+-a----        04-08-2026     18:34           1211 debug_accordion_output.txt
+-a----        03-08-2026     17:16           8250 debug_body.txt
+-a----        04-08-2026     18:46           3367 debug_data.md
+-a----        04-08-2026     19:31          29507 mock_test.jpg
+-a----        04-08-2026     21:23              0 output.txt
+-a----        04-08-2026     18:25           3053 plan.txt
+-a----        31-07-2026     14:02            999 PROJECT_SPEC.md
+-a----        31-07-2026     14:02           2737 README.md
+-a----        31-07-2026     14:01            174 requirements.txt
+-a----        04-08-2026     18:19           2345 scratch_accordion_diag.py
+-a----        04-08-2026     16:40            474 scratch_camoufox_test.py
+-a----        04-08-2026     19:29           4717 test_scraper.py
+
+
+]633;D;0]633;A]633;P;Cwd=D:\x5cfashion_monitorPS D:\fashion_monitor> ]633;B
+(venv) python -m src.main 
+
+]633;D;0]633;A]633;P;Cwd=D:\x5cfashion_monitorPS D:\fashion_monitor> ]633;B
+(venv) Stop-Transcript
+**********************
+Windows PowerShell transcript end
+End time: 20260804212842
+**********************

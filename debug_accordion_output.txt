@@ -1,0 +1,43 @@
+Navigating to https://www2.hm.com/en_in/productpage.1344928012.html...
+
+=== EXTRACTING __NEXT_DATA__ JSON ===
+No __NEXT_DATA__ element found!
+
+=== CLICKING 'Description & fit' BUTTON EXACTLY ONCE ===
+  Result: {'found': False}
+
+=== CLICKING 'Material & Care' BUTTON EXACTLY ONCE ===
+  Result: {'found': True, 'text': 'MATERIAL & CARE', 'class': 'b8e50f f6ca3d e7422f'}
+
+=== BODY TEXT AFTER SINGLE CLICK ===
+  'Sleeve Length': ✗ MISSING
+  'Neckline': ✗ MISSING
+  'Fit:': ✗ MISSING
+  'Length:': ✗ MISSING
+  'Waist Rise': ✗ MISSING
+  'Style:': ✗ MISSING
+  'Art. No': ✗ MISSING
+  'Composition': ✓ FOUND
+  'Cotton': ✓ FOUND
+
+=== RELEVANT BODY SECTION (between DESCRIPTION and DELIVERY) ===
+DESCRIPTION & FIT
+MATERIAL & CARE
+COMPOSITION
+Cotton 100%
+CARE INSTRUCTIONS
+Do not iron on print
+Only non-chlorine bleach when needed
+Line dry
+Medium iron
+Machine wash at 40°
+No dry clean
+
+Bring your clean, previously loved clothing or textiles to one of our stores — they can be from any brand.
+
+Material:
+Cotton, Jersey
+MATERIALS IN THIS PRODUCT EXPLAINED
+Cotton
+Cotton is a soft and versatile natural fibre harvested from the cotton plant.
+DELIVERY AND PAYMENT

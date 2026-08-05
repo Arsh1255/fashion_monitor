@@ -1,0 +1,23 @@
+hm:
+  enabled: true
+  name: "H&M"
+  region: "India"
+  categories:
+    Men: "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"
+    Women: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
+
+zara:
+  enabled: false
+  name: "Zara"
+  region: "India"
+  categories:
+    Men: "" # TODO: Add URLs later
+    Women: ""
+
+lacoste:
+  enabled: false
+  name: "Lacoste"
+  region: "India"
+  categories:
+    Men: "" # TODO: Add URLs later
+    Women: ""

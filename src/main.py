@@ -19,7 +19,7 @@ from pathlib import Path
 
 from src.config import load_config
 from src.storage import JSONStorage
-from src.scraper import HMScraper
+from src.scrapers import get_scrapers
 from src.ai_analyzer import NvidiaNimAnalyzer
 from src.reporter import PDFReporter
 from src.email_sender import EmailSender
@@ -56,8 +56,8 @@ def main() -> int:
     logger = logging.getLogger("main")
     logger.info("=" * 60)
     logger.info("Starting Fashion Trend Monitor execution cycle...")
-    categories_str = ", ".join([cat for cat, _ in config.target_urls])
-    logger.info(f"Target Categories: {categories_str}")
+    active_retailers = [s.get("name", k) for k, s in config.retailers.items() if s.get("enabled")]
+    logger.info(f"Active Retailers: {', '.join(active_retailers)}")
     logger.info("=" * 60)
 
     try:
@@ -66,65 +66,76 @@ def main() -> int:
         seen_count = len(storage.get_seen_ids())
         logger.info(f"Loaded {seen_count} previously seen product IDs from storage.")
 
-        scraper = HMScraper(config)
+        scrapers = get_scrapers(config)
+        master_product_dict = {"Men": {}, "Women": {}}
+        all_new_products = []
         
-        # Step 2: Clean up old temporary screenshots from previous runs
-        scraper.cleanup_old_screenshots()
+        for scraper in scrapers:
+            logger.info(f"--- Processing Retailer: {scraper.retailer_name} ---")
+            # Step 2: Clean up old temporary screenshots from previous runs
+            scraper.cleanup_old_screenshots()
 
-        # Step 3: Scrape New Arrivals listing pages (Playwright Chromium)
-        scraped_products = scraper.fetch_new_arrivals()
-        logger.info(f"Scraped total {len(scraped_products)} items across all categories.")
+            # Step 3: Scrape New Arrivals listing pages
+            scraped_products = scraper.fetch_new_arrivals()
+            logger.info(f"[{scraper.retailer_name}] Scraped total {len(scraped_products)} items.")
 
-        # Step 4: Deduplicate against seen storage
-        unseen_products = storage.filter_unseen(scraped_products)
-        logger.info(f"Identified {len(unseen_products)} NEW unseen products.")
+            # Step 4: Deduplicate against seen storage
+            unseen_products = storage.filter_unseen(scraped_products)
+            logger.info(f"[{scraper.retailer_name}] Identified {len(unseen_products)} NEW unseen products.")
 
-        if not unseen_products:
-            logger.info("No new products detected during this run. Workflow complete.")
-            logger.info("=" * 60)
-            return 0
+            if not unseen_products:
+                continue
 
-        # Step 5: Scrape product detail pages via Camoufox (Firefox) to bypass Akamai WAF
-        logger.info("Scraping product detail pages via Camoufox (Firefox)...")
-        scraper.scrape_product_details_batch(unseen_products)
+            # Step 5: Scrape product detail pages via Camoufox
+            logger.info(f"[{scraper.retailer_name}] Scraping product detail pages via Camoufox...")
+            scraper.scrape_product_details_batch(unseen_products)
 
-        # Step 6: Capture high-res product photos for NEW products only
-        logger.info("Acquiring high-resolution product photos for new products...")
-        scraper.capture_product_screenshots(unseen_products)
+            # Step 6: Capture high-res product photos for NEW products only
+            logger.info(f"[{scraper.retailer_name}] Acquiring high-resolution product photos...")
+            scraper.capture_product_screenshots(unseen_products)
 
-        # Filter out products that failed to download an image
-        valid_products = []
-        for p in unseen_products:
-            if p.screenshot_path and Path(p.screenshot_path).exists():
-                valid_products.append(p)
-            else:
-                logger.warning(f"Discarding {p.art_no} ({p.name}) due to missing/crashed image.")
-        unseen_products = valid_products
+            # Filter out products that failed to download an image
+            valid_products = []
+            for p in unseen_products:
+                if p.screenshot_path and Path(p.screenshot_path).exists():
+                    valid_products.append(p)
+                else:
+                    logger.warning(f"[{scraper.retailer_name}] Discarding {p.art_no} ({p.name}) due to missing/crashed image.")
+            
+            all_new_products.extend(valid_products)
+            
+            # Group by category -> retailer
+            for p in valid_products:
+                if p.category not in master_product_dict:
+                    master_product_dict[p.category] = {}
+                if scraper.retailer_name not in master_product_dict[p.category]:
+                    master_product_dict[p.category][scraper.retailer_name] = []
+                master_product_dict[p.category][scraper.retailer_name].append(p)
 
-        if not unseen_products:
-            logger.info("No valid products remaining after image acquisition. Workflow complete.")
+        if not all_new_products:
+            logger.info("No valid new products across any retailer. Workflow complete.")
             logger.info("=" * 60)
             return 0
 
         # Step 7: Perform NVIDIA NIM visual AI analysis
         logger.info("Performing NVIDIA NIM visual AI analysis...")
         analyzer = NvidiaNimAnalyzer(config)
-        analyzer.analyze_products(unseen_products)
+        analyzer.analyze_products(all_new_products)
 
-        # Step 7: Generate Separate PDF Reports Per Category
+        # Step 8: Generate Separate PDF Reports Per Category
         logger.info("Generating separate PDF reports per category...")
         reporter = PDFReporter(config)
-        category_pdf_paths = reporter.generate_all_reports(unseen_products)
+        category_pdf_paths = reporter.generate_all_reports(master_product_dict)
         for cat_name, pdf_path in category_pdf_paths.items():
             logger.info(f"Created category PDF [{cat_name}]: {pdf_path}")
 
         # Step 8: Dispatch Email Notification with attachments
         logger.info("Sending email notification with category PDF reports...")
         email_sender = EmailSender(config)
-        email_sender.send_report_email(category_pdf_paths, len(unseen_products))
+        email_sender.send_report_email(category_pdf_paths, len(all_new_products))
 
-        # Step 9: Update persistent state only after successful processing
-        new_ids = [p.art_no for p in unseen_products]
+        # Step 10: Update persistent state only after successful processing
+        new_ids = [p.art_no for p in all_new_products]
         storage.save_seen_ids(new_ids)
         logger.info(f"Saved {len(new_ids)} new product IDs to persistent storage.")
 

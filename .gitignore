@@ -37,8 +37,7 @@ debug_accordion.py
 debug_accordion_output.txt
 mock_test.jpg
 output.txt
-plan.txt
 PROJECT_SPEC.md
 scratch_accordion_diag.py
 scratch_camoufox_test.py
-test_scrapper.py
+test_scraper.py

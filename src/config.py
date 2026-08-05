@@ -31,7 +31,8 @@ class Config:
     nvidia_base_url: str
 
     # Scraper Settings
-    target_urls: List[tuple]  # List of (CategoryName, URL) tuples
+    # Scraper Settings
+    retailers: dict  # Loaded from retailers.yaml
     headless: bool
     max_pages_per_category: int
     max_items_per_category: int
@@ -75,24 +76,19 @@ def load_config(env_path: Optional[Path] = None) -> Config:
         path = Path(raw_path)
         return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
 
-    # Parse target URLs from env or use DEFAULT_SECTIONS (Men, Women, Kids)
-    custom_urls = os.getenv("TARGET_URLS", "")
-    sections = []
-    if custom_urls:
-        for item in custom_urls.split(";"):
-            if "," in item:
-                cat, url = item.split(",", 1)
-                sections.append((cat.strip(), url.strip()))
-            else:
-                sections.append(("Default", item.strip()))
-    else:
-        sections = DEFAULT_SECTIONS
+    # Parse retailers.yaml
+    import yaml
+    retailers_path = PROJECT_ROOT / "retailers.yaml"
+    retailers_config = {}
+    if retailers_path.exists():
+        with open(retailers_path, "r", encoding="utf-8") as f:
+            retailers_config = yaml.safe_load(f) or {}
 
     config = Config(
         nvidia_api_key=os.getenv("NVIDIA_API_KEY", ""),
         nvidia_nim_model=os.getenv("NVIDIA_NIM_MODEL", "meta/llama-3.2-11b-vision-instruct"),
         nvidia_base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-        target_urls=sections,
+        retailers=retailers_config,
         headless=os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes"),
         max_pages_per_category=int(os.getenv("MAX_PAGES_PER_CATEGORY", "3")),
         max_items_per_category=int(os.getenv("MAX_ITEMS_PER_CATEGORY", "100")),

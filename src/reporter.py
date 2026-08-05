@@ -1,439 +1,1114 @@
-"""
-PDF reporter module for Fashion Trend Monitor.
+"""PDF report generation for Fashion Trend Monitor.
 
-Generates professional fashion trend reports per category with Roboto typography.
-Each product card shows two clearly separated sections:
-  1. PRODUCT DETAILS  — authoritative scraped data (composition, material, fit, description)
-  2. AI VISUAL ANALYSIS — 3-5 bullet-point visual observations from the vision model
-
-Supports multi-retailer grouping with a Table of Contents and Dynamic Footers.
+This module deliberately owns presentation only.  Its public API is unchanged:
+``PDFReporter.generate_category_report`` and ``generate_all_reports`` still
+accept the same product data produced by the existing pipeline.
 """
 
+from __future__ import annotations
+
+import html
 import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from PIL import Image as PILImage
-
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
-from reportlab.platypus import (
-    BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Table, TableStyle,
-    Image, HRFlowable, KeepTogether, PageBreak
-)
-from reportlab.platypus.flowables import Flowable
-from reportlab.platypus.tableofcontents import TableOfContents
-from reportlab.graphics.shapes import Drawing, Rect, Path as RLPath
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Flowable,
+    Frame,
+    Image,
+    KeepTogether,
+    NextPageTemplate,
+    PageBreak,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from reportlab.platypus.tableofcontents import IndexingFlowable
+
+try:
+    from svglib.svglib import svg2rlg
+except ImportError:  # The report still works when optional SVG support is absent.
+    svg2rlg = None
 
 from src.config import Config
 from src.models import Product
 
 logger = logging.getLogger(__name__)
 
-# ── Font Registration ─────────────────────────────────────────────────────────
-_FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
-_FONTS_REGISTERED = False
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_ASSETS_DIR = _PROJECT_ROOT / "assets" / "pdf"
+_FONTS_DIR = _ASSETS_DIR / "fonts"
+_ICONS_DIR = _ASSETS_DIR / "icons"
 
 
-def _register_fonts():
-    global _FONTS_REGISTERED
-    if _FONTS_REGISTERED:
-        return
+class Theme:
+    """The small, shared Material-inspired design system for the report."""
+
+    primary = colors.HexColor("#121212")
+    surface = colors.white
+    surface_variant = colors.HexColor("#F7F8F7")
+    surface_green = colors.HexColor("#F1F8F3")
+    surface_blue = colors.HexColor("#F2F6FC")
+    surface_purple = colors.HexColor("#F7F3FB")
+    text_primary = colors.HexColor("#1F1F1F")
+    text_secondary = colors.HexColor("#5F6368")
+    text_muted = colors.HexColor("#80868B")
+    border = colors.HexColor("#DADCE0")
+    green = colors.HexColor("#137333")
+    link = colors.HexColor("#4338CA")
+
+    font_regular = "Poppins"
+    font_medium = "Poppins-Medium"
+    font_semibold = "Poppins-SemiBold"
+    font_bold = "Poppins-Bold"
+
+    page_margin = 40
+    header_height = 48
+    footer_height = 42
+    space_1 = 6
+    space_2 = 10
+    space_3 = 16
+    space_4 = 24
+    card_padding = 14
+    radius = 8
+
+
+def _register_fonts() -> None:
     try:
-        pdfmetrics.registerFont(TTFont("Roboto", str(_FONTS_DIR / "Roboto-Regular.ttf")))
-        pdfmetrics.registerFont(TTFont("Roboto-Bold", str(_FONTS_DIR / "Roboto-Bold.ttf")))
-        pdfmetrics.registerFont(TTFont("Roboto-Italic", str(_FONTS_DIR / "Roboto-Italic.ttf")))
-        from reportlab.pdfbase.pdfmetrics import registerFontFamily
-        registerFontFamily("Roboto", normal="Roboto", bold="Roboto-Bold", italic="Roboto-Italic")
-        _FONTS_REGISTERED = True
-        logger.info("Roboto fonts registered.")
-    except Exception as e:
-        logger.warning(f"Could not register Roboto fonts ({e}). Falling back to Helvetica.")
+        pdfmetrics.registerFont(
+            TTFont(Theme.font_regular, str(_FONTS_DIR / "Poppins-Regular.ttf"))
+        )
+        pdfmetrics.registerFont(
+            TTFont(Theme.font_medium, str(_FONTS_DIR / "Poppins-Medium.ttf"))
+        )
+        pdfmetrics.registerFont(
+            TTFont(Theme.font_semibold, str(_FONTS_DIR / "Poppins-SemiBold.ttf"))
+        )
+        pdfmetrics.registerFont(
+            TTFont(Theme.font_bold, str(_FONTS_DIR / "Poppins-Bold.ttf"))
+        )
+        pdfmetrics.registerFontFamily(
+            Theme.font_regular,
+            normal=Theme.font_regular,
+            bold=Theme.font_bold,
+            italic=Theme.font_medium,
+        )
+    except Exception as exc:
+        logger.warning("Could not register local Poppins fonts (%s).", exc)
 
 
-# ── Text Helpers ──────────────────────────────────────────────────────────────
-
-def _clean(text: str) -> str:
-    if not text:
-        return ""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _render_ai(text: str) -> str:
-    if not text:
-        return ""
-    text = text.replace("&", "&amp;")
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'_(.+?)_', r'<i>\1</i>', text)
-    return text
+def _has(value: Any) -> bool:
+    return bool(
+        value
+        and str(value).strip()
+        and str(value).strip().upper() not in {"N/A", "NONE", "NULL"}
+    )
 
 
-def _has(value: str) -> bool:
-    return bool(value and value.strip() and value.strip().upper() not in ("N/A", "NONE", "NULL"))
+def _plain(value: Any) -> str:
+    """Decode input once for canvas text and data comparisons."""
+    return html.unescape(str(value or "")).strip()
 
 
-# ── Fashion Doodle Fallback ───────────────────────────────────────────────────
+def _text(value: Any) -> str:
+    """Produce safe ReportLab Paragraph markup without double-escaping entities."""
+    return html.escape(_plain(value), quote=True)
 
-def create_fashion_doodle(width: float = 2.4 * inch, height: float = 3.2 * inch) -> Drawing:
-    d = Drawing(width, height)
-    d.add(Rect(0, 0, width, height,
-               fillColor=colors.HexColor("#F8FAFC"),
-               strokeColor=colors.HexColor("#E2E8F0"),
-               strokeWidth=0.5, rx=6, ry=6))
-    cx, cy = width / 2.0, height / 2.0 + 10
 
-    hook = RLPath(strokeColor=colors.HexColor("#475569"), strokeWidth=2, fillColor=None)
-    hook.moveTo(cx, cy + 45)
-    hook.curveTo(cx + 12, cy + 60, cx - 12, cy + 70, cx, cy + 78)
-    d.add(hook)
+def _rich_ai_text(value: Any) -> str:
+    escaped = _text(value)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
+    return re.sub(r"_(.+?)_", r"<i>\1</i>", escaped)
 
-    hanger = RLPath(strokeColor=colors.HexColor("#475569"), strokeWidth=2.2, fillColor=None)
-    hanger.moveTo(cx, cy + 45)
-    hanger.lineTo(cx - 50, cy)
-    hanger.lineTo(cx + 50, cy)
-    hanger.closePath()
-    d.add(hanger)
-    return d
 
-# ── Dynamic Footer Flowable ───────────────────────────────────────────────────
+def _fit_image(path: Path, max_width: float, max_height: float) -> Optional[Image]:
+    """Return an image constrained by a box while retaining its original aspect ratio."""
+    try:
+        with PILImage.open(path) as source:
+            width, height = source.size
+        if not width or not height:
+            return None
+        scale = min(max_width / width, max_height / height)
+        image = Image(
+            str(path), width=max(width * scale, 1), height=max(height * scale, 1)
+        )
+        return image
+    except Exception as exc:
+        logger.warning("Could not load product image %s: %s", path, exc)
+        return None
 
-class SetRetailerAction(Flowable):
-    """Flowable to update the document's current retailer state."""
-    def __init__(self, retailer_name: str):
+
+def _svg_icon(name: str, size: float = 13) -> Flowable:
+    if not svg2rlg:
+        return Spacer(size, size)
+    path = _ICONS_DIR / f"{name}.svg"
+    if not path.exists():
+        return Spacer(size, size)
+    try:
+        drawing = svg2rlg(str(path))
+        if drawing and drawing.width and drawing.height:
+            drawing.scale(size / drawing.width, size / drawing.height)
+            drawing.width = size
+            drawing.height = size
+            return drawing
+    except Exception as exc:
+        logger.debug("Could not load SVG icon %s: %s", name, exc)
+    return Spacer(size, size)
+
+
+class RetailerMarker(Flowable):
+    """A zero-height marker consumed by the document's normal afterFlowable hook."""
+
+    def __init__(self, key: str, name: str) -> None:
         super().__init__()
-        self.retailer_name = retailer_name
-        self.width = 0
-        self.height = 0
+        self.key = key
+        self.name = _plain(name)
 
-    def wrap(self, availWidth, availHeight):
+    def wrap(
+        self, available_width: float, available_height: float
+    ) -> Tuple[float, float]:
         return 0, 0
 
-    def draw(self):
+    def draw(self) -> None:
         pass
 
-    def apply(self, doc):
-        doc.current_retailer = self.retailer_name
+
+class PageCountMarker(Flowable):
+    def wrap(
+        self, available_width: float, available_height: float
+    ) -> Tuple[float, float]:
+        return 0, 0
+
+    def draw(self) -> None:
+        pass
 
 
-class RetailerDocTemplate(BaseDocTemplate):
-    """Custom template that tracks current retailer for dynamic footers."""
-    def __init__(self, *args, **kwargs):
-        self.category_name = kwargs.pop('category_name', 'General')
+class PaginationIndex(IndexingFlowable):
+    """A standard multiBuild index which stabilises TOC entries and page totals."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._entries: List[Tuple[str, str, int]] = []
+        self._last_entries: List[Tuple[str, str, int]] = []
+        self._total_pages = 0
+        self._last_total_pages = 0
+
+    @property
+    def entries(self) -> List[Tuple[str, str, int]]:
+        return list(self._last_entries)
+
+    @property
+    def total_pages(self) -> int:
+        return self._last_total_pages or self._total_pages
+
+    def beforeBuild(self) -> None:
+        self._last_entries = list(self._entries)
+        self._last_total_pages = self._total_pages
+        self._entries = []
+        self._total_pages = 0
+
+    def notify(self, kind: str, payload: Any) -> None:
+        if kind == "RetailerSection":
+            entry = tuple(payload)
+            if entry not in self._entries:
+                self._entries.append(entry)  # type: ignore[arg-type]
+        elif kind == "ReportPageCount":
+            self._total_pages = int(payload)
+
+    def isSatisfied(self) -> bool:
+        return (
+            self._entries == self._last_entries
+            and self._total_pages == self._last_total_pages
+        )
+
+    def wrap(
+        self, available_width: float, available_height: float
+    ) -> Tuple[float, float]:
+        return 0, 0
+
+    def draw(self) -> None:
+        pass
+
+
+class ReportDocument(BaseDocTemplate):
+    def __init__(
+        self, *args: Any, category_name: str, report_date: datetime, **kwargs: Any
+    ) -> None:
+        self.category_name = _plain(category_name)
+        self.report_date = report_date
+        self.current_retailer = "Report index"
+        self.pagination: Optional[PaginationIndex] = None
         super().__init__(*args, **kwargs)
-        self.current_retailer = ""
-        self._generation_ts = datetime.now().strftime("%Y-%m-%d  %H:%M")
 
-    def afterFlowable(self, flowable):
-        if isinstance(flowable, SetRetailerAction):
-            flowable.apply(self)
-        if hasattr(flowable, 'toc_level'):
-            text = flowable.getPlainText()
-            self.notify('TOCEntry', (flowable.toc_level, text, self.page))
+    def afterFlowable(self, flowable: Flowable) -> None:
+        if isinstance(flowable, RetailerMarker):
+            self.current_retailer = flowable.name
+            self.notify("RetailerSection", (flowable.key, flowable.name, self.page))
+        elif isinstance(flowable, PageCountMarker):
+            self.notify("ReportPageCount", self.page)
 
 
-def draw_dynamic_footer(canvas, doc):
+def _cover_background(canvas: Any, doc: ReportDocument) -> None:
     canvas.saveState()
-
-    # Soft accent blobs — top-right corner, well away from content
-    canvas.setFillColor(colors.HexColor("#FEF3C7"))
-    canvas.circle(595, 800, 55, fill=1, stroke=0)
-    canvas.setFillColor(colors.HexColor("#F3E8FF"))
-    canvas.circle(565, 815, 35, fill=1, stroke=0)
-    canvas.setFillColor(colors.HexColor("#ECFDF5"))
-    canvas.circle(15, 15, 60, fill=1, stroke=0)
-
-    # Thin editorial rule just below header margin
-    canvas.setStrokeColor(colors.HexColor("#1E293B"))
-    canvas.setLineWidth(1.2)
-    canvas.line(36, 750, 576, 750)
-
-    # Footer — left: Retailer, centre: Category + Time, right: page
-    canvas.setFont("Helvetica-Bold", 7.5)
-    canvas.setFillColor(colors.HexColor("#64748B"))
-    retailer_label = doc.current_retailer.upper() if doc.current_retailer else "FASHION TREND MONITOR"
-    canvas.drawString(36, 20, retailer_label)
-
-    canvas.setFont("Helvetica", 7)
-    canvas.setFillColor(colors.HexColor("#94A3B8"))
-    canvas.drawCentredString(306, 20, f"Category: {doc.category_name} | Generated: {doc._generation_ts}")
-
-    canvas.setFont("Helvetica", 7.5)
-    canvas.setFillColor(colors.HexColor("#64748B"))
-    canvas.drawRightString(576, 20, f"Page {doc.page}")
-
+    background = _ASSETS_DIR / "backgrounds" / "cover_bg.png"
+    if background.exists():
+        canvas.drawImage(
+            str(background), 0, 0, width=letter[0], height=letter[1], mask="auto"
+        )
     canvas.restoreState()
 
 
-# ── PDF Reporter ──────────────────────────────────────────────────────────────
+def _content_chrome(canvas: Any, doc: ReportDocument) -> None:
+    """Draw after flowables, so the retailer marker applies to its first page too."""
+    canvas.saveState()
+    page_width, page_height = letter
+    left = doc.leftMargin
+    # A small optical inset keeps right-aligned dates/page numbers inside the
+    # visible trim area in PDF viewers that crop very close to the page edge.
+    right = page_width - doc.rightMargin - 8
+    retailer = _plain(doc.current_retailer or "Fashion Trend Monitor")
+    date = doc.report_date.strftime("%d %B %Y").upper()
+    total = doc.pagination.total_pages if doc.pagination else doc.page
+    total = max(total, doc.page)
 
-class PDFReporter:
-    """Generates styled per-category PDF fashion trend reports."""
+    canvas.setStrokeColor(Theme.border)
+    canvas.setLineWidth(0.5)
+    canvas.line(
+        left,
+        page_height - Theme.header_height,
+        right,
+        page_height - Theme.header_height,
+    )
+    canvas.line(left, Theme.footer_height, right, Theme.footer_height)
 
-    def __init__(self, config: Config):
-        self.config = config
-        _register_fonts()
+    canvas.setFillColor(Theme.green)
+    canvas.setFont(Theme.font_bold, 8)
+    canvas.drawString(left, page_height - 30, retailer.upper())
+    canvas.setFillColor(Theme.text_secondary)
+    canvas.setFont(Theme.font_medium, 8)
+    canvas.drawString(
+        left + pdfmetrics.stringWidth(retailer.upper(), Theme.font_bold, 8) + 9,
+        page_height - 30,
+        f"•  {doc.category_name} Collection",
+    )
+    canvas.setFont(Theme.font_semibold, 8)
+    canvas.drawRightString(right, page_height - 30, date)
 
-    def _f(self, bold: bool = False, italic: bool = False) -> str:
-        if bold: return "Roboto-Bold"
-        if italic: return "Roboto-Italic"
-        return "Roboto"
+    canvas.setFont(Theme.font_medium, 8)
+    canvas.drawString(left, 25, f"{retailer} • {doc.category_name} Collection")
+    canvas.setFont(Theme.font_semibold, 8)
+    canvas.setFillColor(Theme.text_primary)
+    canvas.drawRightString(right, 25, f"Page {doc.page} of {total}")
+    canvas.restoreState()
 
-    def _build_styles(self) -> dict:
-        F = self._f
-        return {
-            "title": ParagraphStyle("RTitle", fontName=F(bold=True), fontSize=24, leading=28, textColor=colors.HexColor("#0F172A"), alignment=TA_CENTER),
-            "subtitle": ParagraphStyle("RSubtitle", fontName=F(), fontSize=12, leading=16, textColor=colors.HexColor("#475569"), alignment=TA_CENTER),
-            "toc_header": ParagraphStyle("RToCHeader", fontName=F(bold=True), fontSize=16, leading=20, textColor=colors.HexColor("#0F172A"), spaceAfter=10),
-            "retailer_header": ParagraphStyle("RRetailerHeader", fontName=F(bold=True), fontSize=20, leading=24, textColor=colors.HexColor("#1E3A8A"), spaceAfter=20, spaceBefore=10),
-            
-            "item_title": ParagraphStyle("RItemTitle", fontName=F(bold=True), fontSize=11, leading=15, textColor=colors.HexColor("#0F172A")),
-            "item_meta": ParagraphStyle("RItemMeta", fontName=F(), fontSize=8.5, leading=12, textColor=colors.HexColor("#64748B")),
-            "badge_web": ParagraphStyle("RBadgeWeb", fontName=F(bold=True), fontSize=8, leading=11, textColor=colors.HexColor("#1E40AF"), spaceBefore=0, spaceAfter=2),
-            "badge_ai": ParagraphStyle("RBadgeAI", fontName=F(bold=True), fontSize=8, leading=11, textColor=colors.HexColor("#0F766E"), spaceBefore=0, spaceAfter=2),
-            "web_desc": ParagraphStyle("RWebDesc", fontName=F(italic=True), fontSize=8, leading=11.5, textColor=colors.HexColor("#334155")),
-            "spec_label": ParagraphStyle("RSpecLabel", fontName=F(bold=True), fontSize=7.5, leading=11, textColor=colors.HexColor("#475569")),
-            "spec_val": ParagraphStyle("RSpecVal", fontName=F(), fontSize=7.5, leading=11, textColor=colors.HexColor("#0F172A")),
-            "bullet": ParagraphStyle("RBullet", fontName=F(), fontSize=8, leading=12, textColor=colors.HexColor("#1E293B"), leftIndent=4),
-        }
 
-    def _build_right_column(self, product: Product, styles: dict) -> list:
-        elems = []
-        
-        elems.append(Paragraph("SCRAPED WEBSITE SPECIFICATIONS", styles["badge_web"]))
-        elems.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#2563EB"), spaceAfter=4))
+class RetailerChip(Flowable):
+    """A width-aware, data-driven retailer card for the cover."""
 
-        if _has(product.description):
-            desc_text = _clean(product.description[:320])
-            desc_p = Paragraph(f'"{desc_text}"', styles["web_desc"])
-            desc_box = Table([[desc_p]], colWidths=[4.3 * inch])
-            desc_box.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EFF6FF")),
-                ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#BFDBFE")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]))
-            elems.append(desc_box)
-            elems.append(Spacer(1, 4))
+    def __init__(self, name: str, logo_path: Optional[Path], width: float) -> None:
+        super().__init__()
+        self.name = _plain(name)
+        self.logo_path = logo_path
+        self.width = width
+        self.height = 44
 
-        attrs = {}
-        if product.ai_analysis and hasattr(product.ai_analysis, "category_specific_info"):
-            attrs = product.ai_analysis.category_specific_info or {}
+    def draw(self) -> None:
+        canv = self.canv
+        canv.saveState()
+        canv.setFillColor(Theme.surface)
+        canv.setStrokeColor(Theme.border)
+        canv.roundRect(0, 0, self.width, self.height, Theme.radius, fill=1, stroke=1)
+        x = Theme.card_padding
+        if self.logo_path and self.logo_path.exists():
+            try:
+                with PILImage.open(self.logo_path) as source:
+                    raw_w, raw_h = source.size
+                scale = min(25 / raw_w, 25 / raw_h)
+                logo_w, logo_h = raw_w * scale, raw_h * scale
+                canv.drawImage(
+                    str(self.logo_path),
+                    x,
+                    (self.height - logo_h) / 2,
+                    logo_w,
+                    logo_h,
+                    mask="auto",
+                )
+                x += logo_w + Theme.space_2
+            except Exception as exc:
+                logger.debug("Could not draw logo %s: %s", self.logo_path, exc)
+        label = self.name.upper()
+        canv.setFillColor(Theme.text_primary)
+        canv.setFont(Theme.font_semibold, 8.5)
+        max_text = max(self.width - x - Theme.card_padding, 10)
+        while (
+            label and pdfmetrics.stringWidth(label, Theme.font_semibold, 8.5) > max_text
+        ):
+            label = label[:-2].rstrip() + "…"
+        canv.drawString(x, 17, label)
+        canv.restoreState()
 
-        def _attr(*keys: str) -> str:
-            for key in keys:
-                val = attrs.get(key, "")
-                if _has(val): return _clean(val)
-            return ""
 
-        price_str = _clean(product.price) if _has(product.price) else "Price not listed"
-        comp_str = _attr("Composition", "composition") or (_clean(product.composition) if _has(product.composition) else "") or "—"
-        mat_str = _attr("Material", "material") or (_clean(product.material_type) if _has(product.material_type) else "") or "—"
-        fit_str = _attr("Fit", "fit") or (_clean(product.fit) if _has(product.fit) else "") or "—"
-        
-        pattern_str = "—"
-        if product.ai_analysis and hasattr(product.ai_analysis, "design_pattern"):
-            if _has(product.ai_analysis.design_pattern) and product.ai_analysis.design_pattern != "N/A":
-                pattern_str = _clean(product.ai_analysis.design_pattern)
+class DynamicRetailerTOC(Flowable):
+    """Build TOC cards from the page map resolved by ReportLab ``multiBuild``."""
 
-        skip_keys = {"composition", "material", "material type", "fit", "garment fit", "design pattern"}
-        detail_pairs = []
-        if attrs:
-            for k, v in attrs.items():
-                if _has(v) and k.strip().lower() not in skip_keys:
-                    detail_pairs.append(f"• <b>{_clean(k).title()}:</b> {_clean(v)}")
-        else:
-            for k, v in (product.fit_details or {}).items():
-                if _has(v) and k.strip().lower() not in skip_keys:
-                    detail_pairs.append(f"• <b>{_clean(k).title()}:</b> {_clean(v)}")
+    def __init__(
+        self,
+        reporter: "PDFReporter",
+        retailer_dict: Dict[str, List[Product]],
+        category: str,
+        pagination: PaginationIndex,
+        width: float,
+    ) -> None:
+        super().__init__()
+        self.reporter = reporter
+        self.retailer_dict = retailer_dict
+        self.category = category
+        self.pagination = pagination
+        self.width = width
+        self.table: Optional[Table] = None
 
-        details_str = "<br/>".join(detail_pairs) if detail_pairs else "—"
-
-        fields = []
-        if price_str and price_str not in ("—", "Price not listed"): fields.append(("Price", f"<b>{price_str}</b>"))
-        if pattern_str != "—": fields.append(("Design Pattern", pattern_str))
-        if comp_str != "—": fields.append(("Composition", comp_str))
-        if mat_str != "—": fields.append(("Material", mat_str))
-        if fit_str != "—": fields.append(("Garment Fit", fit_str))
-        if details_str != "—": fields.append(("Attributes", details_str))
-            
-        if len(fields) % 2 != 0: fields.append(("", ""))
-
-        specs_table_data = []
-        for i in range(0, len(fields), 2):
-            row = []
-            l1, v1 = fields[i]
-            row.extend([Paragraph(l1, styles["spec_label"]), Paragraph(v1, styles["spec_val"])] if l1 else ["", ""])
-            l2, v2 = fields[i+1]
-            row.extend([Paragraph(l2, styles["spec_label"]), Paragraph(v2, styles["spec_val"])] if l2 else ["", ""])
-            specs_table_data.append(row)
-            
-        if not specs_table_data: specs_table_data = [["", "", "", ""]]
-        specs_tbl = Table(specs_table_data, colWidths=[0.85 * inch, 1.3 * inch, 0.75 * inch, 1.4 * inch])
-        specs_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-            ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#E2E8F0")),
-            ("PADDING", (0, 0), (-1, -1), 3),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
-        elems.append(specs_tbl)
-
-        elems.append(Spacer(1, 6))
-        
-        ai = product.ai_analysis
-        confidence_str = f"  (Confidence: {ai.confidence_score})" if ai and hasattr(ai, "confidence_score") and _has(ai.confidence_score) else ""
-        elems.append(Paragraph(f"VISUAL TREND ANALYSIS{confidence_str}", styles["badge_ai"]))
-        elems.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#0D9488"), spaceAfter=4))
-        
-        bullets = [b for b in (ai.bullet_summary if ai else []) if b and b.strip() and b.strip() not in ("", '""')]
-        if bullets:
-            ai_elems = []
-            for bullet in bullets[:4]:
-                clean_b = _render_ai(bullet.strip().lstrip("•–- "))
-                if clean_b:
-                    ai_elems.append(Paragraph(f"• {clean_b}", styles["bullet"]))
-                    ai_elems.append(Spacer(1, 1.5))
-            
-            ai_box = Table([[ai_elems]], colWidths=[4.3 * inch])
-            ai_box.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F0FDF4")),
-                ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#86EFAC")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]))
-            elems.append(ai_box)
-        else:
-            elems.append(Paragraph("<i>No visual attributes extracted.</i>", styles["web_desc"]))
-            
-        return elems
-
-    def generate_category_report(self, retailer_dict: Dict[str, List[Product]], category_name: str) -> Path:
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        file_name = f"Fashion_Trend_Report_{category_name}_{date_str}.pdf"
-        target_path = self.config.output_path.parent / file_name
-
-        doc = RetailerDocTemplate(
-            str(target_path),
-            pagesize=letter,
-            rightMargin=36,
-            leftMargin=36,
-            topMargin=54,
-            bottomMargin=40,
-            category_name=category_name
-        )
-        
-        frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
-        template = PageTemplate(id='RetailerTemplate', frames=frame, onPage=draw_dynamic_footer)
-        doc.addPageTemplates([template])
-
-        styles = self._build_styles()
-        story = []
-
-        # ── COVER PAGE ─────────────────────────────────────────────────────────
-        story.append(Spacer(1, 2.5 * inch))
-        story.append(Paragraph("FASHION TREND MONITOR", styles["title"]))
-        story.append(Spacer(1, 0.2 * inch))
-        story.append(Paragraph(f"Analysis Report - {category_name.upper()}", styles["subtitle"]))
-        story.append(Spacer(1, 0.1 * inch))
-        story.append(Paragraph(f"Generated on {date_str}", styles["subtitle"]))
-        story.append(PageBreak())
-
-        # ── TABLE OF CONTENTS ──────────────────────────────────────────────────
-        story.append(SetRetailerAction("Table of Contents"))
-        story.append(Paragraph("Table of Contents", styles["toc_header"]))
-        toc = TableOfContents()
-        toc.levelStyles = [
-            ParagraphStyle(fontName=self._f(bold=True), fontSize=12, name='TOCHeading1', leftIndent=20, firstLineIndent=-20, spaceBefore=5, leading=16),
+    def _build_table(self) -> Table:
+        known_pages = {key: page for key, _name, page in self.pagination.entries}
+        rows: List[List[Any]] = []
+        total_products = 0
+        active = [
+            (key, products) for key, products in self.retailer_dict.items() if products
         ]
-        story.append(toc)
-        story.append(PageBreak())
-
-        # ── RETAILER SECTIONS ──────────────────────────────────────────────────
-        for retailer_name, products in retailer_dict.items():
-            if not products:
-                continue
-
-            story.append(SetRetailerAction(retailer_name))
-            
-            # Create TOC entry header
-            header_para = Paragraph(retailer_name, styles["retailer_header"])
-            header_para.toc_level = 0
-            story.append(header_para)
-
-            for product in products:
-                item_elems = []
-                
-                name_clean = _clean(product.name) if product.name else "Untitled Product"
-                item_elems.append(Paragraph(name_clean, styles["item_title"]))
-                item_elems.append(Spacer(1, 2))
-
-                price_raw = product.price if _has(product.price) else None
-                price_meta = _clean(price_raw) if price_raw else "Price not available"
-                link = f"<a href='{product.product_url}' color='#2563EB'><u>View Online</u></a>"
-                item_elems.append(Paragraph(f"{price_meta}  •  Art. No: {product.art_no}  •  {link}", styles["item_meta"]))
-                item_elems.append(Spacer(1, 6))
-
-                photo = None
-                if product.screenshot_path and Path(product.screenshot_path).exists():
-                    try:
-                        with PILImage.open(product.screenshot_path) as test_img:
-                            test_img.verify()
-                        photo = Image(product.screenshot_path, width=2.4 * inch, height=3.2 * inch)
-                    except Exception as e:
-                        logger.warning(f"Corrupt image for {product.art_no}: {e}")
-                if photo is None:
-                    photo = create_fashion_doodle(2.4 * inch, 3.2 * inch)
-
-                right_elems = self._build_right_column(product, styles)
-                right_col = Table([[el] for el in right_elems], colWidths=[4.4 * inch])
-                right_col.setStyle(TableStyle([
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        for number, (key, products) in enumerate(active, 1):
+            total_products += len(products)
+            rows.append(
+                [
+                    self.reporter._toc_card(
+                        number,
+                        key,
+                        self.category,
+                        len(products),
+                        known_pages.get(key, 0),
+                        self.width,
+                    )
+                ]
+            )
+            rows.append([Spacer(1, Theme.space_2)])
+        summary = Table(
+            [
+                [
+                    Paragraph(
+                        f"<b>{len(active)}</b><br/><font size='8'>RETAILERS</font>",
+                        ParagraphStyle(
+                            "SummaryA",
+                            fontName=Theme.font_semibold,
+                            fontSize=16,
+                            leading=18,
+                            textColor=Theme.text_primary,
+                        ),
+                    ),
+                    Paragraph(
+                        f"<b>{total_products}</b><br/><font size='8'>NEW PRODUCTS</font>",
+                        ParagraphStyle(
+                            "SummaryB",
+                            fontName=Theme.font_semibold,
+                            fontSize=16,
+                            leading=18,
+                            alignment=TA_RIGHT,
+                            textColor=Theme.green,
+                        ),
+                    ),
+                ]
+            ],
+            colWidths=[self.width / 2, self.width / 2],
+            hAlign="LEFT",
+        )
+        summary.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), Theme.surface_variant),
+                    ("BOX", (0, 0), (-1, -1), 0.8, Theme.border),
+                    ("LEFTPADDING", (0, 0), (-1, -1), Theme.card_padding),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), Theme.card_padding),
+                    ("TOPPADDING", (0, 0), (-1, -1), Theme.space_2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), Theme.space_2),
+                ]
+            )
+        )
+        rows.append([summary])
+        table = Table(rows, colWidths=[self.width], hAlign="LEFT", splitByRow=1)
+        table.setStyle(
+            TableStyle(
+                [
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                     ("TOPPADDING", (0, 0), (-1, -1), 0),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                ]))
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        return table
 
-                card = Table([[photo, right_col]], colWidths=[2.6 * inch, 4.4 * inch])
-                card.setStyle(TableStyle([
+    def wrap(
+        self, available_width: float, available_height: float
+    ) -> Tuple[float, float]:
+        self.table = self._build_table()
+        return self.table.wrap(available_width, available_height)
+
+    def split(self, available_width: float, available_height: float) -> List[Flowable]:
+        return self.table.split(available_width, available_height) if self.table else []
+
+    def draw(self) -> None:
+        if self.table:
+            self.table.drawOn(self.canv, 0, 0)
+
+
+class PDFReporter:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        _register_fonts()
+        self.styles = self._build_styles()
+
+    def _build_styles(self) -> Dict[str, ParagraphStyle]:
+        return {
+            "eyebrow": ParagraphStyle(
+                "Eyebrow",
+                fontName=Theme.font_bold,
+                fontSize=8,
+                leading=10,
+                textColor=Theme.green,
+            ),
+            "cover_title": ParagraphStyle(
+                "CoverTitle",
+                fontName=Theme.font_bold,
+                fontSize=43,
+                leading=47,
+                textColor=Theme.text_primary,
+            ),
+            "cover_subtitle": ParagraphStyle(
+                "CoverSubtitle",
+                fontName=Theme.font_medium,
+                fontSize=14,
+                leading=20,
+                textColor=Theme.text_secondary,
+            ),
+            "toc_title": ParagraphStyle(
+                "TocTitle",
+                fontName=Theme.font_bold,
+                fontSize=30,
+                leading=36,
+                textColor=Theme.text_primary,
+            ),
+            "section_title": ParagraphStyle(
+                "SectionTitle",
+                fontName=Theme.font_bold,
+                fontSize=24,
+                leading=29,
+                textColor=Theme.text_primary,
+            ),
+            "section_subtitle": ParagraphStyle(
+                "SectionSubtitle",
+                fontName=Theme.font_regular,
+                fontSize=10,
+                leading=14,
+                textColor=Theme.text_secondary,
+            ),
+            "product_line": ParagraphStyle(
+                "ProductLine",
+                fontName=Theme.font_semibold,
+                fontSize=15,
+                leading=20,
+                textColor=Theme.text_primary,
+            ),
+            "meta": ParagraphStyle(
+                "Meta",
+                fontName=Theme.font_medium,
+                fontSize=9,
+                leading=13,
+                textColor=Theme.text_secondary,
+            ),
+            "card_label": ParagraphStyle(
+                "CardLabel",
+                fontName=Theme.font_bold,
+                fontSize=8,
+                leading=11,
+                textColor=Theme.text_primary,
+            ),
+            "body": ParagraphStyle(
+                "Body",
+                fontName=Theme.font_regular,
+                fontSize=9,
+                leading=14,
+                textColor=Theme.text_secondary,
+            ),
+            "attribute": ParagraphStyle(
+                "Attribute",
+                fontName=Theme.font_regular,
+                fontSize=9,
+                leading=13,
+                textColor=Theme.text_secondary,
+            ),
+            "toc_name": ParagraphStyle(
+                "TocName",
+                fontName=Theme.font_semibold,
+                fontSize=14,
+                leading=18,
+                textColor=Theme.text_primary,
+            ),
+        }
+
+    def _logo_path(self, retailer_name: str) -> Optional[Path]:
+        wanted = _plain(retailer_name)
+        for key, settings in (self.config.retailers or {}).items():
+            if _plain(settings.get("name", key)) != wanted:
+                continue
+            raw_path = settings.get("logo")
+            if not raw_path:
+                return None
+            path = Path(raw_path)
+            return path if path.is_absolute() else _PROJECT_ROOT / path
+        return None
+
+    def _card(
+        self,
+        rows: Sequence[Sequence[Any]],
+        width: float,
+        *,
+        background: colors.Color = Theme.surface,
+        border: colors.Color = Theme.border,
+        padding: float = Theme.card_padding,
+    ) -> Table:
+        card = Table(list(rows), colWidths=[width], hAlign="LEFT", splitByRow=1)
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), background),
+                    ("BOX", (0, 0), (-1, -1), 0.8, border),
+                    ("LEFTPADDING", (0, 0), (-1, -1), padding),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), padding),
+                    # Padding belongs around a card, not around every row inside it.
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, 0), padding),
+                    ("BOTTOMPADDING", (0, -1), (-1, -1), padding),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FAFAFA")),
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                    ("TOPPADDING", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                    ("LINEAFTER", (0, 0), (0, -1), 0.4, colors.HexColor("#E2E8F0")),
-                ]))
+                ]
+            )
+        )
+        return card
 
-                item_elems.append(card)
-                item_elems.append(Spacer(1, 16))
-                story.append(KeepTogether(item_elems))
+    def _cover_story(
+        self,
+        retailer_dict: Dict[str, List[Product]],
+        category: str,
+        content_width: float,
+        date: datetime,
+    ) -> List[Flowable]:
+        retail_names = [name for name, products in retailer_dict.items() if products]
+        date_display = date.strftime("%d %B %Y").upper()
+        detail_width = content_width * 0.62
+        details = Table(
+            [
+                [
+                    _svg_icon("calendar", 22),
+                    Paragraph(
+                        f"<b>REPORT DATE</b><br/><font name='{Theme.font_semibold}'>{_text(date_display)}</font>",
+                        self.styles["meta"],
+                    ),
+                ],
+                [
+                    _svg_icon("category", 22),
+                    Paragraph(
+                        f"<b>CATEGORY</b><br/><font name='{Theme.font_semibold}'>{_text(category)} Collection</font>",
+                        self.styles["meta"],
+                    ),
+                ],
+            ],
+            colWidths=[30, detail_width - 30],
+            hAlign="LEFT",
+        )
+        details.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), Theme.space_2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), Theme.space_2),
+                ]
+            )
+        )
+        story: List[Flowable] = [
+            Spacer(1, 74),
+            Paragraph("DAILY REPORT", self.styles["eyebrow"]),
+            Spacer(1, Theme.space_3),
+            Paragraph("Fashion<br/>Trend<br/>Monitor", self.styles["cover_title"]),
+            Spacer(1, Theme.space_2),
+            Paragraph(
+                "AI-Powered Retail Trend Analysis", self.styles["cover_subtitle"]
+            ),
+            Spacer(1, Theme.space_4),
+            details,
+            Spacer(1, Theme.space_4),
+            Paragraph("RETAILERS INCLUDED", self.styles["eyebrow"]),
+            Spacer(1, Theme.space_2),
+        ]
+        if retail_names:
+            gap = Theme.space_2
+            # A minimum chip width preserves readable labels; columns remain derived from available space.
+            columns = max(1, min(3, int((content_width + gap) // 150)))
+            chip_width = (content_width - gap * (columns - 1)) / columns
+            chips = [
+                RetailerChip(name, self._logo_path(name), chip_width)
+                for name in retail_names
+            ]
+            grid: List[List[Any]] = []
+            for start in range(0, len(chips), columns):
+                row: List[Any] = list(chips[start : start + columns])
+                row.extend([Spacer(chip_width, 44)] * (columns - len(row)))
+                grid.append(row)
+            chip_table = Table(grid, colWidths=[chip_width] * columns, hAlign="LEFT")
+            chip_table.setStyle(
+                TableStyle(
+                    [
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), gap / 2),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), gap),
+                    ]
+                )
+            )
+            story.append(chip_table)
+        return story
 
-            story.append(PageBreak())
+    def _toc_card(
+        self,
+        index: int,
+        name: str,
+        category: str,
+        product_count: int,
+        page: int,
+        width: float,
+    ) -> Table:
+        accent_width = min(max(width * 0.12, 44), 66)
+        body_width = width - accent_width
+        page_width = min(max(body_width * 0.14, 56), 72)
+        text_width = body_width - page_width
+        number = Paragraph(
+            f"{index:02d}",
+            ParagraphStyle(
+                "TocNo",
+                fontName=Theme.font_bold,
+                fontSize=22,
+                alignment=TA_CENTER,
+                textColor=Theme.green,
+            ),
+        )
+        details = Paragraph(
+            f"<b>{_text(name)}</b><br/><font size='10' color='#5F6368'>{_text(category)} Collection<br/><b>{product_count}</b> new products</font>",
+            ParagraphStyle(
+                "TocDetails",
+                fontName=Theme.font_semibold,
+                fontSize=14,
+                leading=18,
+                textColor=Theme.text_primary,
+            ),
+        )
+        page_cell = Paragraph(
+            f"<font size='7' color='#80868B'><b>PAGE</b></font><br/><font size='18' color='#4338CA'><b>{page:02d}</b></font>",
+            ParagraphStyle(
+                "TocPage",
+                fontName=Theme.font_bold,
+                fontSize=18,
+                leading=19,
+                alignment=TA_RIGHT,
+            ),
+        )
+        row = Table(
+            [[number, details, page_cell]],
+            colWidths=[accent_width, text_width, page_width],
+            hAlign="LEFT",
+        )
+        row.setStyle(
+            TableStyle(
+                [
+                    (
+                        "BACKGROUND",
+                        (0, 0),
+                        (0, 0),
+                        (
+                            Theme.surface_green
+                            if index % 3 == 1
+                            else (
+                                Theme.surface_blue
+                                if index % 3 == 2
+                                else Theme.surface_purple
+                            )
+                        ),
+                    ),
+                    ("BACKGROUND", (1, 0), (-1, -1), Theme.surface),
+                    ("BOX", (0, 0), (-1, -1), 0.8, Theme.border),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), Theme.card_padding),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), Theme.card_padding),
+                    ("TOPPADDING", (0, 0), (-1, -1), Theme.space_3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), Theme.space_3),
+                ]
+            )
+        )
+        return row
 
-        # Build requires multiple passes for Table of Contents
+    def _toc_story(
+        self,
+        retailer_dict: Dict[str, List[Product]],
+        category: str,
+        pagination: PaginationIndex,
+        width: float,
+    ) -> List[Flowable]:
+        return [
+            RetailerMarker("__toc__", "Report index"),
+            Paragraph("Table of Contents", self.styles["toc_title"]),
+            Spacer(1, Theme.space_2),
+            DynamicRetailerTOC(self, retailer_dict, category, pagination, width),
+        ]
+
+    def _attribute_rows(self, product: Product) -> Iterable[Tuple[str, str, str]]:
+        analysis = product.ai_analysis
+        attrs = getattr(analysis, "category_specific_info", {}) or {}
+
+        def choose(*keys: str) -> str:
+            for key in keys:
+                if _has(attrs.get(key)):
+                    return _plain(attrs[key])
+            return "—"
+
+        yield "pattern", "Design pattern", (
+            _plain(getattr(analysis, "design_pattern", ""))
+            if _has(getattr(analysis, "design_pattern", ""))
+            else "—"
+        )
+        yield "composition", "Composition", (
+            choose("Composition", "composition")
+            if choose("Composition", "composition") != "—"
+            else (_plain(product.composition) if _has(product.composition) else "—")
+        )
+        yield "fit", "Garment fit", (
+            choose("Fit", "fit")
+            if choose("Fit", "fit") != "—"
+            else (_plain(product.fit) if _has(product.fit) else "—")
+        )
+        yield "material", "Material", (
+            choose("Material", "material")
+            if choose("Material", "material") != "—"
+            else (_plain(product.material_type) if _has(product.material_type) else "—")
+        )
+        excluded = {
+            "composition",
+            "material",
+            "material type",
+            "fit",
+            "garment fit",
+            "design pattern",
+        }
+        additional = [
+            f"• {_plain(k).title()}: {_plain(v)}"
+            for k, v in attrs.items()
+            if _has(v) and _plain(k).lower() not in excluded
+        ]
+        if not additional:
+            additional = [
+                f"• {_plain(k).title()}: {_plain(v)}"
+                for k, v in (product.fit_details or {}).items()
+                if _has(v)
+            ]
+        yield "attributes", "Attributes", (
+            "<br/>".join(_text(item) for item in additional) if additional else "—"
+        )
+
+    def _product_story(
+        self, product: Product, serial: int, width: float
+    ) -> List[Flowable]:
+        """A compact product block: media and core details share one visual row.
+
+        The row is deliberately sized from the page frame, not fixed document
+        coordinates.  Long analysis remains a separate flowable below it and
+        may continue naturally on the next page without splitting the product
+        identity, image, or specification grid.
+        """
+        name = _text(product.name or "Untitled product")
+        price = _text(product.price) if _has(product.price) else "Price N/A"
+        link = _text(product.product_url)
+        header = [
+            Paragraph(
+                f"<font color='#137333'><b>{serial:02d}.</b></font>&nbsp;&nbsp;{name}&nbsp;&nbsp;"
+                f"<font color='#BDBDBD'>•</font>&nbsp;&nbsp;<font color='#1F1F1F'><b>{price}</b></font>",
+                self.styles["product_line"],
+            ),
+            Paragraph(
+                f"Art. No: {_text(product.art_no or 'N/A')}&nbsp;&nbsp;&nbsp;&nbsp;<link href='{link}' color='#4338CA'>View online</link>",
+                self.styles["meta"],
+            ),
+            Spacer(1, Theme.space_2),
+        ]
+        column_gap = Theme.space_3
+        media_width = width * 0.38
+        media_column_width = media_width + column_gap
+        details_width = width - media_column_width
+        media_max_height = min(media_width * 1.28, 3.15 * inch)
+        photo = (
+            _fit_image(
+                Path(product.screenshot_path),
+                media_width - (2 * Theme.card_padding),
+                media_max_height,
+            )
+            if product.screenshot_path
+            else None
+        )
+        if photo:
+            media = self._card(
+                [[photo]],
+                media_width,
+                background=Theme.surface_variant,
+                padding=Theme.card_padding,
+            )
+        else:
+            media = self._card(
+                [[Paragraph("Product image unavailable", self.styles["body"])]],
+                media_width,
+                background=Theme.surface_variant,
+            )
+        description = _text((product.description or "No description available.")[:360])
+        description_card = self._card(
+            [
+                [
+                    Paragraph(
+                        "SCRAPED WEBSITE SPECIFICATIONS", self.styles["card_label"]
+                    )
+                ],
+                [Spacer(1, 3)],
+                [Paragraph(f"“{description}”", self.styles["body"])],
+            ],
+            details_width,
+            padding=Theme.space_2,
+        )
+        attr_rows: List[List[Any]] = []
+        label_width = details_width * 0.42
+        value_width = details_width - label_width
+        for icon, label, value in self._attribute_rows(product):
+            label_content = Table(
+                [
+                    [
+                        _svg_icon(icon, 14),
+                        Paragraph(_text(label).upper(), self.styles["card_label"]),
+                    ]
+                ],
+                colWidths=[20, label_width - 20],
+            )
+            label_content.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ]
+                )
+            )
+            # Additional attributes are assembled from individually escaped items
+            # separated by the one safe ReportLab tag below.
+            formatted_value = value if "<br/>" in value else _text(value)
+            attr_rows.append(
+                [label_content, Paragraph(formatted_value, self.styles["attribute"])]
+            )
+        attributes = Table(
+            attr_rows, colWidths=[label_width, value_width], hAlign="LEFT", splitByRow=1
+        )
+        attributes.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), Theme.surface_variant),
+                    ("BOX", (0, 0), (-1, -1), 0.8, Theme.border),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.4, Theme.border),
+                    ("LEFTPADDING", (0, 0), (-1, -1), Theme.space_2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), Theme.space_2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        details = Table(
+            [[description_card], [Spacer(1, Theme.space_2)], [attributes]],
+            colWidths=[details_width],
+            hAlign="LEFT",
+        )
+        details.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        product_grid = Table(
+            [[media, details]],
+            colWidths=[media_column_width, details_width],
+            hAlign="LEFT",
+        )
+        product_grid.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (0, 0), 0),
+                    ("RIGHTPADDING", (0, 0), (0, 0), column_gap),
+                    ("LEFTPADDING", (1, 0), (1, 0), 0),
+                    ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        analysis = product.ai_analysis
+        bullets = [
+            item
+            for item in (getattr(analysis, "bullet_summary", []) or [])
+            if _has(item)
+        ][:3]
+        confidence = (
+            _text(getattr(analysis, "confidence_score", ""))
+            if _has(getattr(analysis, "confidence_score", ""))
+            else ""
+        )
+        analysis_rows: List[List[Any]] = [
+            [
+                Paragraph(
+                    "VISUAL TREND ANALYSIS",
+                    ParagraphStyle(
+                        "AnalysisLabel",
+                        parent=self.styles["card_label"],
+                        textColor=Theme.green,
+                    ),
+                )
+            ]
+        ]
+        if confidence:
+            analysis_rows.append(
+                [Paragraph(f"Confidence: {confidence}", self.styles["meta"])]
+            )
+        analysis_rows.append([Spacer(1, Theme.space_1)])
+        analysis_rows.extend(
+            [
+                [Paragraph(f"• {_rich_ai_text(item)}", self.styles["body"])]
+                for item in bullets
+            ]
+            or [[Paragraph("No visual attributes extracted.", self.styles["body"])]]
+        )
+        analysis_card = self._card(
+            analysis_rows,
+            width,
+            background=Theme.surface_green,
+            border=colors.HexColor("#C8E6C9"),
+            padding=Theme.space_2,
+        )
+        # The product identity must never be stranded at the foot of a page.
+        # The compact grid is bounded by the page frame, so it is safe to keep
+        # this small unit together while leaving the analysis card free to flow.
+        primary_product = KeepTogether(header + [product_grid])
+        return [
+            primary_product,
+            Spacer(1, Theme.space_2),
+            analysis_card,
+            Spacer(1, Theme.space_3),
+        ]
+
+    def generate_category_report(
+        self, retailer_dict: Dict[str, List[Product]], category_name: str
+    ) -> Path:
+        date = datetime.now()
+        destination = (
+            self.config.output_path.parent
+            / f"Fashion_Trend_Report_{category_name}_{date:%Y-%m-%d}.pdf"
+        )
+        doc = ReportDocument(
+            str(destination),
+            pagesize=letter,
+            leftMargin=Theme.page_margin,
+            rightMargin=Theme.page_margin,
+            topMargin=Theme.header_height + Theme.space_3,
+            bottomMargin=Theme.footer_height + Theme.space_3,
+            category_name=category_name,
+            report_date=date,
+        )
+        frame = Frame(
+            doc.leftMargin,
+            doc.bottomMargin,
+            doc.width,
+            doc.height,
+            id="report",
+            leftPadding=0,
+            rightPadding=0,
+            topPadding=0,
+            bottomPadding=0,
+        )
+        doc.addPageTemplates(
+            [
+                PageTemplate(id="cover", frames=[frame], onPage=_cover_background),
+                PageTemplate(id="content", frames=[frame], onPageEnd=_content_chrome),
+            ]
+        )
+        pagination = PaginationIndex()
+        doc.pagination = pagination
+        story: List[Flowable] = [pagination]
+        story.extend(self._cover_story(retailer_dict, category_name, doc.width, date))
+        story.extend([NextPageTemplate("content"), PageBreak()])
+        story.extend(
+            self._toc_story(retailer_dict, category_name, pagination, doc.width)
+        )
+        story.append(PageBreak())
+        is_first_retailer = True
+        for retailer_key, products in retailer_dict.items():
+            if not products:
+                continue
+            # Retailer sections are intentional navigation boundaries.  Product
+            # cards within a retailer still flow naturally and may share pages.
+            if not is_first_retailer:
+                story.append(PageBreak())
+            is_first_retailer = False
+            retailer_name = _plain(retailer_key)
+            story.extend(
+                [
+                    RetailerMarker(retailer_key, retailer_name),
+                    Spacer(1, Theme.space_1),
+                    Paragraph(_text(retailer_name), self.styles["section_title"]),
+                    Paragraph(
+                        f"{_text(category_name)} Collection • {len(products)} new products",
+                        self.styles["section_subtitle"],
+                    ),
+                    Spacer(1, Theme.space_3),
+                ]
+            )
+            for serial, product in enumerate(products, 1):
+                story.extend(self._product_story(product, serial, doc.width))
+        story.append(PageCountMarker())
         doc.multiBuild(story)
-        logger.info(f"PDF for '{category_name}' saved to {target_path}")
-        return target_path
+        logger.info("PDF for %s saved to %s", category_name, destination)
+        return destination
 
-    def generate_all_reports(self, master_product_dict: Dict[str, Dict[str, List[Product]]]) -> Dict[str, Path]:
-        """Iterate over master dictionary and generate one PDF per top-level category (e.g. Men, Women)."""
-        report_paths: Dict[str, Path] = {}
-        for cat_name, retailer_dict in master_product_dict.items():
-            # Only generate report if there are actually products in this category
-            has_products = any(len(products) > 0 for products in retailer_dict.values())
-            if has_products:
-                report_paths[cat_name] = self.generate_category_report(retailer_dict, cat_name)
-        return report_paths
+    def generate_all_reports(
+        self, master_product_dict: Dict[str, Dict[str, List[Product]]]
+    ) -> Dict[str, Path]:
+        return {
+            category: self.generate_category_report(retailers, category)
+            for category, retailers in master_product_dict.items()
+            if any(retailers.values())
+        }

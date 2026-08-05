@@ -101,11 +101,11 @@ class HMScraper(BaseScraper):
                     const name = nameLink ? nameLink.textContent.trim() : '';
                     const href = nameLink ? nameLink.href : '';
 
-                    // Price: search for element containing 'Rs.' or '₹'
+                    // Price: search for element containing currency symbols
                     const allEls = Array.from(article.querySelectorAll('span, p, strong, div'));
                     const priceEl = allEls.find(el => {
                         const txt = el.textContent.strip ? el.textContent.strip() : el.textContent.trim();
-                        return el.childElementCount === 0 && (txt.includes('Rs.') || txt.includes('₹') || /\\bRs\\b/i.test(txt));
+                        return el.childElementCount === 0 && (txt.includes('Rs.') || txt.includes('₹') || txt.includes('$') || txt.includes('£') || txt.includes('€') || /\\bRs\\b/i.test(txt));
                     });
                     const price = priceEl ? priceEl.textContent.trim() : 'N/A';
 
@@ -320,15 +320,17 @@ class HMScraper(BaseScraper):
                         material_chars: 0
                     };
 
-                    const priceMatch = text.match(/(?:Rs\.|₹)\s*([\d,]+(?:\.\d{2})?)/i);
+                    const priceMatch = text.match(/(Rs\.|₹|\$|£|€)\s*([\d,]+(?:\.\d{2})?)/i);
                     if (priceMatch) {
-                        result.price = 'Rs. ' + priceMatch[1];
+                        let symbol = priceMatch[1];
+                        if (symbol.toUpperCase() === 'RS.') symbol = 'Rs.';
+                        result.price = symbol + ' ' + priceMatch[2];
                     }
 
                     // DESCRIPTION & FIT panel (and Materials since it's above Delivery)
                     let fitBlock = '';
                     const fitMatch = text.match(
-                        /Description\s*&\s*fit\s*([\s\S]+?)(?=Delivery\s*and\s*Payment|Delivery\s*&\s*Payment|STYLE\s*WITH|SIMILAR\s*ITEMS|$)/i
+                        /Description(?:\s*&\s*fit)?\s*([\s\S]+?)(?=Delivery\s*and\s*Payment|Delivery\s*&\s*Payment|STYLE\s*WITH|SIMILAR\s*ITEMS|$)/i
                     );
                     if (fitMatch) {
                         fitBlock = fitMatch[1]

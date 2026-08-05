@@ -1,23 +1,79 @@
-hm:
+# hm_india:
+#   enabled: true
+#   name: "H&M India"
+#   region: "India"
+#   logo: "assets/pdf/logos/hm.png"
+#   categories:
+#     Men: "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"
+#     Women: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
+
+# hm_us:
+#   enabled: true
+#   name: "H&M US"
+#   region: "US"
+#   logo: "assets/pdf/logos/hm.png"
+#   categories:
+#     Men: "https://www2.hm.com/en_us/men/new-arrivals/view-all.html"
+#     Women: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
+
+# zara:
+#   enabled: false
+#   name: "Zara"
+#   region: "India"
+#   logo: "assets/pdf/logos/zara.png"
+#   categories:
+#     Men: "" # TODO: Add URLs later
+#     Women: ""
+
+# lacoste:
+#   enabled: false
+#   name: "Lacoste"
+#   region: "India"
+#   logo: "assets/pdf/logos/lacoste.png"
+#   categories:
+#     Men: "" # TODO: Add URLs later
+#     Women: ""
+
+
+# Add the logo field to each retailer entry in D:\fashion_monitor\retailers.yaml.
+# The existing YAML loader needs no changes.
+hm_india:
   enabled: true
-  name: "H&M"
+  name: "H&M India"
   region: "India"
+  logo: "assets/pdf/logos/hm-seeklogo.png"
   categories:
     Men: "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"
     Women: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
+
+hm_us:
+  enabled: true
+  name: "H&M US"
+  region: "US"
+  logo: "assets/pdf/logos/hm-seeklogo.png"
+  categories:
+    Men: "https://www2.hm.com/en_us/men/new-arrivals/view-all.html"
+    Women: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
 
 zara:
   enabled: false
   name: "Zara"
   region: "India"
+  logo: "assets/pdf/logos/zara.png"
   categories:
-    Men: "" # TODO: Add URLs later
+    Men: ""
     Women: ""
 
 lacoste:
   enabled: false
   name: "Lacoste"
   region: "India"
+  logo: "assets/pdf/logos/lacoste.png"
   categories:
-    Men: "" # TODO: Add URLs later
+    Men: ""
     Women: ""
+
+
+# boss: { name: "BOSS", logo: "assets/pdf/logos/boss.png", ... }
+# polo: { name: "Polo", logo: "assets/pdf/logos/polo.png", ... }
+# shein: { name: "SHEIN", logo: "assets/pdf/logos/shein.png", ... }

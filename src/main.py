@@ -67,14 +67,17 @@ def main() -> int:
         logger.info(f"Loaded {seen_count} previously seen product IDs from storage.")
 
         scrapers = get_scrapers(config)
+        
+        # Step 2: Clean up old temporary screenshots from previous runs
+        if scrapers:
+            scrapers[0].cleanup_old_screenshots()
+
         master_product_dict = {"Men": {}, "Women": {}}
         all_new_products = []
         
         for scraper in scrapers:
             logger.info(f"--- Processing Retailer: {scraper.retailer_name} ---")
-            # Step 2: Clean up old temporary screenshots from previous runs
-            scraper.cleanup_old_screenshots()
-
+            
             # Step 3: Scrape New Arrivals listing pages
             scraped_products = scraper.fetch_new_arrivals()
             logger.info(f"[{scraper.retailer_name}] Scraped total {len(scraped_products)} items.")

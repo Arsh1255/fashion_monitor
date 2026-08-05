@@ -5,6 +5,7 @@ reportlab>=4.0.0
 python-dotenv>=1.0.0
 pillow>=10.0.0
 PyYAML>=6.0.1
+svglib>=2.1.0
 
 # Development and testing
 pytest>=7.4.0

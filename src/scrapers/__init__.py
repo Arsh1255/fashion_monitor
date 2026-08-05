@@ -14,7 +14,8 @@ def get_scrapers(config: Config) -> List[BaseScraper]:
     scrapers = []
     
     mapping = {
-        "hm": HMScraper,
+        "hm_india": HMScraper,
+        "hm_us": HMScraper,
         "zara": ZaraScraper,
         "lacoste": LacosteScraper
     }

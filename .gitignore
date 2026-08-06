@@ -13,7 +13,6 @@ ENV/
 # Environment Variables & Secrets
 .env
 .env.local
-.env.example
 
 # Output files & generated artifacts
 output/*

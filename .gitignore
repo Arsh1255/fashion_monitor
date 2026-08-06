@@ -40,3 +40,8 @@ PROJECT_SPEC.md
 scratch_accordion_diag.py
 scratch_camoufox_test.py
 test_scraper.py
+
+# additional non-project folders and files
+scratch/
+obsolete/
+plan.txt

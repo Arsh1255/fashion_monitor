@@ -30,8 +30,7 @@ class NvidiaNimAnalyzer:
         self.client: Optional[OpenAI] = None
         if config.nvidia_api_key:
             self.client = OpenAI(
-                api_key=config.nvidia_api_key,
-                base_url=config.nvidia_base_url
+                api_key=config.nvidia_api_key, base_url=config.nvidia_base_url
             )
 
     @staticmethod
@@ -50,7 +49,9 @@ class NvidiaNimAnalyzer:
         Visual fields may use the image; attributes must never invent missing values.
         """
         if not product.screenshot_path:
-            logger.warning(f"No screenshot path for product {product.art_no}. Skipping AI analysis.")
+            logger.warning(
+                f"No screenshot path for product {product.art_no}. Skipping AI analysis."
+            )
             return AIAnalysis(summary="No screenshot available for visual analysis.")
 
         screenshot_path = Path(product.screenshot_path)
@@ -60,7 +61,9 @@ class NvidiaNimAnalyzer:
             return AIAnalysis(summary="Failed to read screenshot image file.")
 
         if not self.client or not self.config.nvidia_api_key:
-            logger.warning("NVIDIA API key not configured. Returning mock/default analysis.")
+            logger.warning(
+                "NVIDIA API key not configured. Returning mock/default analysis."
+            )
             return AIAnalysis(
                 fabric_info="Cotton / Synthetic blend (Mock)",
                 pattern_info="Solid color with tailored construction (Mock)",
@@ -69,7 +72,7 @@ class NvidiaNimAnalyzer:
                     "Composition": product.composition or "Cotton 100% (Mock)",
                     "Fit": product.fit or "Relaxed fit (Mock)",
                 },
-                summary="Default visual analysis (NVIDIA_API_KEY not configured)."
+                summary="Default visual analysis (NVIDIA_API_KEY not configured).",
             )
 
         system_prompt = (
@@ -105,7 +108,7 @@ Task:
    - "Material"
    - "Garment Fit"
 4. Analyze the image to provide detailed textile information in the "Visual Analysis" list (2-4 bullet points). Focus strictly on observable texture, woven/knit type, and fabric drape. Do not hallucinate or repeat basic text details (like color).
-5. Provide a "Confidence Score" (e.g., "8/10") reflecting your certainty about the visual textile assessment.
+5. Provide a "Confidence Score" (e.g., "8/10" or "6/10") reflecting your certainty about the visual textile assessment. Don't hardcode 8/10 rather give your dynamic confidence about your conclusion out of 10.
 
 Output strictly in this JSON format:
 {{
@@ -144,17 +147,21 @@ Output strictly in this JSON format:
                                 {"type": "text", "text": user_prompt},
                                 {
                                     "type": "image_url",
-                                    "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
-                                }
-                            ]
-                        }
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_img}"
+                                    },
+                                },
+                            ],
+                        },
                     ],
                     max_tokens=700,
-                    temperature=0.05
+                    temperature=0.05,
                 )
 
                 raw_content = response.choices[0].message.content or ""
-                logger.debug(f"NVIDIA NIM Raw Response for {product.art_no}: {raw_content}")
+                logger.debug(
+                    f"NVIDIA NIM Raw Response for {product.art_no}: {raw_content}"
+                )
 
                 json_match = None
                 if raw_content.startswith("{") and raw_content.endswith("}"):
@@ -178,10 +185,12 @@ Output strictly in this JSON format:
                         "design_pattern": json_match.get("Design Pattern", "N/A"),
                         "bullet_summary": json_match.get("Visual Analysis", []),
                         "confidence_score": json_match.get("Confidence Score", "N/A"),
-                        "category_specific_info": json_match.get("Category Specific Info", {})
+                        "category_specific_info": json_match.get(
+                            "Category Specific Info", {}
+                        ),
                     }
                     analysis = AIAnalysis.from_dict(mapped_data)
-                    
+
                     # Mirror common AI attributes onto Product fields used by the PDF specs grid
                     if "Composition" in json_match and json_match["Composition"] != "":
                         product.composition = json_match["Composition"]
@@ -189,15 +198,13 @@ Output strictly in this JSON format:
                         product.material_type = json_match["Material"]
                     if "Garment Fit" in json_match and json_match["Garment Fit"] != "":
                         product.fit = json_match["Garment Fit"]
-                        
+
                     return analysis
 
-                return AIAnalysis(
-                    summary=raw_content[:250]
-                )
+                return AIAnalysis(summary=raw_content[:250])
 
             except RateLimitError:
-                backoff_time = (2 ** attempt) * 1.5
+                backoff_time = (2**attempt) * 1.5
                 logger.warning(
                     f"Rate limited (429) by NVIDIA NIM API for product {product.art_no}. "
                     f"Exponential backoff {backoff_time:.1f}s "
@@ -206,23 +213,25 @@ Output strictly in this JSON format:
                 time.sleep(backoff_time)
 
             except Exception as e:
-                logger.error(f"Error querying NVIDIA NIM API for product {product.art_no}: {e}")
+                logger.error(
+                    f"Error querying NVIDIA NIM API for product {product.art_no}: {e}"
+                )
                 if "429" in str(e):
-                    backoff_time = (2 ** attempt) * 1.5
+                    backoff_time = (2**attempt) * 1.5
                     time.sleep(backoff_time)
                     continue
                 return AIAnalysis(
                     fabric_info="Analysis error",
                     pattern_info="Analysis error",
                     textile_info="Analysis error",
-                    summary=f"AI analysis request error: {str(e)[:100]}"
+                    summary=f"AI analysis request error: {str(e)[:100]}",
                 )
 
         return AIAnalysis(
             fabric_info="Rate limit exceeded",
             pattern_info="Rate limit exceeded",
             textile_info="Rate limit exceeded",
-            summary="API rate limit (429) exceeded after retries."
+            summary="API rate limit (429) exceeded after retries.",
         )
 
     def is_garment_product(self, product: Product) -> bool:
@@ -231,25 +240,27 @@ Output strictly in this JSON format:
         Uses a very fast, text-only prompt to save rate limits.
         """
         if not self.client or not self.config.nvidia_api_key:
-            return True # default to True if AI is disabled
-            
+            return True  # default to True if AI is disabled
+
         system_prompt = "You are a fashion classifier. Respond ONLY with the word 'GARMENT' or 'ACCESSORY'."
         user_prompt = f"Product Name: {product.name or 'Unknown'}\nURL: {product.product_url or 'N/A'}\nIs this a garment (e.g., shirt, pants, dress, jacket, sweater) or an accessory (e.g., bag, watch, sunglasses, perfume, shoes, belt)?"
-        
+
         try:
             response = self.client.chat.completions.create(
                 model=self.config.nvidia_nim_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 max_tokens=10,
-                temperature=0.0
+                temperature=0.0,
             )
             content = (response.choices[0].message.content or "").strip().upper()
             return "ACCESSORY" not in content
         except Exception as e:
-            logger.warning(f"Error checking if garment for {product.art_no}: {e}. Defaulting to True.")
+            logger.warning(
+                f"Error checking if garment for {product.art_no}: {e}. Defaulting to True."
+            )
             return True
 
     def analyze_products(self, products: List[Product]) -> List[Product]:
@@ -259,25 +270,27 @@ Output strictly in this JSON format:
         """
         manager = AIRequestManager(
             max_retries=self.config.ai_max_retries,
-            delay_seconds=self.config.ai_request_delay
+            delay_seconds=self.config.ai_request_delay,
         )
-        
+
         # We need a wrapper to cache and map the function
         cache: dict[str, AIAnalysis] = {}
-        
+
         def _analyze_wrapper(product: Product, max_retries: int) -> Product:
             if product.art_no in cache:
-                logger.info(f"Reusing cached AI analysis for duplicate product ID {product.art_no}.")
+                logger.info(
+                    f"Reusing cached AI analysis for duplicate product ID {product.art_no}."
+                )
                 product.ai_analysis = cache[product.art_no]
                 return product
-                
+
             analysis = self.analyze_product(product, max_retries=max_retries)
             cache[product.art_no] = analysis
             product.ai_analysis = analysis
-            
+
             # Memory Optimization: Free the raw scraped text to save RAM
             product.raw_page_text = None
-            
+
             return product
 
         return manager.submit_batch(products, _analyze_wrapper)

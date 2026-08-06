@@ -38,7 +38,7 @@
 # Add the logo field to each retailer entry in D:\fashion_monitor\retailers.yaml.
 # The existing YAML loader needs no changes.
 hm_india:
-  enabled: false
+  enabled: true
   name: "H&M India"
   region: "India"
   logo: "assets/pdf/logos/hm-seeklogo.png"

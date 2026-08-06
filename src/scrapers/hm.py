@@ -328,7 +328,7 @@ class HMScraper(BaseScraper):
                             .map(l => l.trim())
                             .find(l =>
                                 l.length > 50
-                                && !/^(New Arrival|Art\.?\s*No|Net Quantity|Common|Description:|Size:|Length:|Sleeve|Fit:|Neckline|Price|Country|Manufactur|Marketed|Customer|Date|Disclaimer|Bring your clean)/i.test(l)
+                                && !/^(New Arrival|Art\.?\s*No|Net Quantity|Common|Description:|Size:|Length:|Sleeve|Fit:|Neckline|Price|Country|Manufactur|Marketed|Customer|Date|Disclaimer|Bring your clean|Material(?:s|\s*&\s*care)?:?|Care:?)/i.test(l)
                             );
                         if (prose) {
                             result.description = prose.slice(0, 450);

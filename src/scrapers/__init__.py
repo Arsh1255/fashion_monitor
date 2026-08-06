@@ -5,6 +5,15 @@ from src.scrapers.base import BaseScraper
 from src.scrapers.hm import HMScraper
 from src.scrapers.zara import ZaraScraper
 from src.scrapers.lacoste import LacosteScraper
+from src.scrapers.us_polo import UsPoloScraper
+
+__all__ = [
+    "BaseScraper",
+    "HMScraper",
+    "ZaraScraper",
+    "LacosteScraper",
+    "UsPoloScraper"
+]
 
 def get_scrapers(config: Config) -> List[BaseScraper]:
     """
@@ -17,7 +26,8 @@ def get_scrapers(config: Config) -> List[BaseScraper]:
         "hm_india": HMScraper,
         "hm_us": HMScraper,
         "zara": ZaraScraper,
-        "lacoste": LacosteScraper
+        "lacoste": LacosteScraper,
+        "us_polo": UsPoloScraper
     }
     
     for key, settings in config.retailers.items():

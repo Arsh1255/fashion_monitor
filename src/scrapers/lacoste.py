@@ -18,7 +18,7 @@ class LacosteScraper(BaseScraper):
         from camoufox.sync_api import Camoufox
         
         products = []
-        with Camoufox(headless=True) as browser:
+        with Camoufox(headless=self.config.headless) as browser:
             for category_name, url in self.categories.items():
                 if not url:
                     continue
@@ -93,7 +93,7 @@ class LacosteScraper(BaseScraper):
         """Scrape detail pages for a batch of products using Camoufox."""
         from camoufox.sync_api import Camoufox
         
-        with Camoufox(headless=True) as browser:
+        with Camoufox(headless=self.config.headless) as browser:
             page = browser.new_page()
             
             for product in products:

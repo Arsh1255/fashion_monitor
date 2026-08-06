@@ -9,6 +9,7 @@ venv/
 .venv/
 env/
 ENV/
+venv_linux/
 
 # Environment Variables & Secrets
 .env
@@ -21,6 +22,8 @@ screenshots/*
 !screenshots/.gitkeep
 logs/*
 !logs/.gitkeep
+data/*
+!data/.gitkeep
 
 # IDE & OS files
 .vscode/

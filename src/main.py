@@ -97,8 +97,11 @@ def main() -> int:
                     # Check deterministic indicators in URL or name first
                     url_lower = (p.product_url or "").lower()
                     name_lower = (p.name or "").lower()
-                    accessory_keywords = ["watch", "perfume", "fragrance", "sunglasses", "bag", "wallet", "belt", "shoes", "sneakers"]
-                    if any(kw in url_lower.split("/") or kw in name_lower.split() for kw in accessory_keywords):
+                    excluded_product_keywords = [
+                        "watch", "perfume", "fragrance", "sunglasses", "bag", "wallet", "belt", "shoes", "sneakers",
+                        "innerwear", "underwear", "brief", "briefs", "boxer", "boxers", "trunk", "trunks", "bra", "bralette", "panty", "panties", "lingerie"
+                    ]
+                    if any(kw in url_lower or kw in name_lower for kw in excluded_product_keywords):
                         continue
                     # AI Fallback
                     if not analyzer.is_garment_product(p):

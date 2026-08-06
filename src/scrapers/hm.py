@@ -233,7 +233,7 @@ class HMScraper(BaseScraper):
         """Scrape new arrival listings across all configured category target URLs."""
         all_products: List[Product] = []
 
-        with Camoufox(headless=True) as browser:
+        with Camoufox(headless=self.config.headless) as browser:
             page = browser.new_page()
 
             for category_name, category_url in self.categories.items():
@@ -380,7 +380,7 @@ class HMScraper(BaseScraper):
         )
 
         # headless=True avoids NS_ERROR_UNKNOWN_SOCKET_TYPE on Windows
-        with Camoufox(headless=True) as browser:
+        with Camoufox(headless=self.config.headless) as browser:
             page = browser.new_page()
 
             for i, product in enumerate(products):

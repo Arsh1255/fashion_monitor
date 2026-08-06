@@ -17,6 +17,7 @@ from openai import OpenAI, RateLimitError
 
 from src.config import Config
 from src.models import Product, AIAnalysis
+from src.ai_manager import AIRequestManager
 
 logger = logging.getLogger(__name__)
 
@@ -224,24 +225,59 @@ Output strictly in this JSON format:
             summary="API rate limit (429) exceeded after retries."
         )
 
-    def analyze_products(self, products: List[Product], delay_seconds: float = 1.0) -> List[Product]:
+    def is_garment_product(self, product: Product) -> bool:
         """
-        Analyze a list of genuinely new products, ensuring no duplicate API calls for identical Art. Nos.
-        Includes configurable inter-request delay to maintain high throughput while respecting API rate limits.
+        Fallback AI method to determine if a product is a garment vs accessory.
+        Uses a very fast, text-only prompt to save rate limits.
         """
-        cache: dict[str, AIAnalysis] = {}
+        if not self.client or not self.config.nvidia_api_key:
+            return True # default to True if AI is disabled
+            
+        system_prompt = "You are a fashion classifier. Respond ONLY with the word 'GARMENT' or 'ACCESSORY'."
+        user_prompt = f"Product Name: {product.name or 'Unknown'}\nURL: {product.product_url or 'N/A'}\nIs this a garment (e.g., shirt, pants, dress, jacket, sweater) or an accessory (e.g., bag, watch, sunglasses, perfume, shoes, belt)?"
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.nvidia_nim_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=10,
+                temperature=0.0
+            )
+            content = (response.choices[0].message.content or "").strip().upper()
+            return "ACCESSORY" not in content
+        except Exception as e:
+            logger.warning(f"Error checking if garment for {product.art_no}: {e}. Defaulting to True.")
+            return True
 
-        for i, product in enumerate(products):
+    def analyze_products(self, products: List[Product]) -> List[Product]:
+        """
+        Analyze a list of genuinely new products.
+        Uses AIRequestManager for strict rate-limiting, retries, and batch tracking.
+        """
+        manager = AIRequestManager(
+            max_retries=self.config.ai_max_retries,
+            delay_seconds=self.config.ai_request_delay
+        )
+        
+        # We need a wrapper to cache and map the function
+        cache: dict[str, AIAnalysis] = {}
+        
+        def _analyze_wrapper(product: Product, max_retries: int) -> Product:
             if product.art_no in cache:
                 logger.info(f"Reusing cached AI analysis for duplicate product ID {product.art_no}.")
                 product.ai_analysis = cache[product.art_no]
-                continue
-
-            analysis = self.analyze_product(product)
+                return product
+                
+            analysis = self.analyze_product(product, max_retries=max_retries)
             cache[product.art_no] = analysis
             product.ai_analysis = analysis
+            
+            # Memory Optimization: Free the raw scraped text to save RAM
+            product.raw_page_text = None
+            
+            return product
 
-            if i < len(products) - 1 and delay_seconds > 0:
-                time.sleep(delay_seconds)
-
-        return products
+        return manager.submit_batch(products, _analyze_wrapper)

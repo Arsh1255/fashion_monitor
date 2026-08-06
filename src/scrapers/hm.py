@@ -159,30 +159,7 @@ class HMScraper(BaseScraper):
 
         return products
 
-    def _simulate_human_behavior(self, page: Page) -> None:
-        """Simulate human-like delays, scrolling, and mouse movements to bypass WAF."""
-        delay = random.uniform(3.0, 10.0)
-        logger.debug(f"Simulating human wait for {delay:.2f} seconds...")
-        
-        # Move mouse around randomly during the wait
-        end_time = time.time() + delay
-        while time.time() < end_time:
-            x = random.randint(100, 1000)
-            y = random.randint(100, 800)
-            try:
-                page.mouse.move(x, y, steps=random.randint(5, 15))
-            except Exception:
-                pass
-            
-            # 30% chance to scroll
-            if random.random() < 0.3:
-                scroll_y = random.randint(-300, 500)
-                try:
-                    page.evaluate(f"window.scrollBy(0, {scroll_y})")
-                except Exception:
-                    pass
-                    
-            time.sleep(random.uniform(0.5, 1.5))
+
 
     def scrape_category_listings(self, page: Page, category_name: str, base_url: str) -> List[Product]:
         """

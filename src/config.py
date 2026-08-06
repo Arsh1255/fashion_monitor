@@ -29,6 +29,8 @@ class Config:
     nvidia_api_key: str
     nvidia_nim_model: str
     nvidia_base_url: str
+    ai_max_retries: int
+    ai_request_delay: float
 
     # Scraper Settings
     # Scraper Settings
@@ -36,6 +38,7 @@ class Config:
     headless: bool
     max_pages_per_category: int
     max_items_per_category: int
+    nav_timeout: int
 
     # SMTP Settings
     smtp_server: str
@@ -88,10 +91,13 @@ def load_config(env_path: Optional[Path] = None) -> Config:
         nvidia_api_key=os.getenv("NVIDIA_API_KEY", ""),
         nvidia_nim_model=os.getenv("NVIDIA_NIM_MODEL", "meta/llama-3.2-11b-vision-instruct"),
         nvidia_base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        ai_max_retries=int(os.getenv("AI_MAX_RETRIES", "4")),
+        ai_request_delay=float(os.getenv("AI_REQUEST_DELAY", "1.5")),
         retailers=retailers_config,
         headless=os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes"),
         max_pages_per_category=int(os.getenv("MAX_PAGES_PER_CATEGORY", "3")),
         max_items_per_category=int(os.getenv("MAX_ITEMS_PER_CATEGORY", "100")),
+        nav_timeout=int(os.getenv("NAV_TIMEOUT", "45000")),
         smtp_server=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
         smtp_user=os.getenv("SMTP_USER", ""),

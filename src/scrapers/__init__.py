@@ -28,7 +28,8 @@ def get_scrapers(config: Config) -> List[BaseScraper]:
                     config=config,
                     retailer_name=settings.get("name", key.capitalize()),
                     region=settings.get("region", "Unknown"),
-                    categories=settings.get("categories", {})
+                    categories=settings.get("categories", {}),
+                    retailer_key=key
                 )
                 scrapers.append(scraper)
                 

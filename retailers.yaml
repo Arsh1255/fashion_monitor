@@ -38,7 +38,7 @@
 # Add the logo field to each retailer entry in D:\fashion_monitor\retailers.yaml.
 # The existing YAML loader needs no changes.
 hm_india:
-  enabled: true
+  enabled: false
   name: "H&M India"
   region: "India"
   logo: "assets/pdf/logos/hm-seeklogo.png"
@@ -65,13 +65,13 @@ zara:
     Women: ""
 
 lacoste:
-  enabled: false
+  enabled: true
   name: "Lacoste"
   region: "India"
   logo: "assets/pdf/logos/lacoste.png"
   categories:
-    Men: ""
-    Women: ""
+    Men: "https://www.lacoste.in/new-in/men.html"
+    Women: "https://www.lacoste.in/new-in/women.html"
 
 
 # boss: { name: "BOSS", logo: "assets/pdf/logos/boss.png", ... }

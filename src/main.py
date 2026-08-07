@@ -98,8 +98,9 @@ def main() -> int:
                     url_lower = (p.product_url or "").lower()
                     name_lower = (p.name or "").lower()
                     excluded_product_keywords = [
-                        "watch", "perfume", "fragrance", "sunglasses", "bag", "wallet", "belt", "shoes", "sneakers",
-                        "innerwear", "underwear", "brief", "briefs", "boxer", "boxers", "trunk", "trunks", "bra", "bralette", "panty", "panties", "lingerie"
+                        "watch", "perfume", "fragrance", "sunglasses", "bag", "wallet", "belt", "shoe", "sneaker",
+                        "innerwear", "underwear", "brief", "boxer", "trunk", "bra", "bralette", "panty", "panties", "lingerie",
+                        "boot", "sandal", "slipper", "heel", "slide"
                     ]
                     if any(kw in url_lower or kw in name_lower for kw in excluded_product_keywords):
                         continue

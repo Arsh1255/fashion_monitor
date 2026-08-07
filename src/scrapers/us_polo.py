@@ -24,55 +24,78 @@ class UsPoloScraper(BaseScraper):
             
             with Camoufox(headless=self.config.headless) as browser:
                 page = browser.new_page()
-                try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                    self._simulate_human_behavior(page)
-                    
-                    # Ensure products are loaded
-                    try:
-                        page.wait_for_selector('.grid__item, .product-card', timeout=10000)
-                    except Exception:
-                        logger.warning(f"[{self.retailer_name}] No product cards found on {url}")
-                        pass
+                
+                limit = self.config.max_items_per_category
+                max_pages = self.config.max_pages_per_category
+                category_count = 0
+                
+                for page_num in range(1, max_pages + 1):
+                    if category_count >= limit:
+                        break
                         
-                    raw_items = page.evaluate("""() => {
-                        const productCards = Array.from(document.querySelectorAll('.grid__item, .product-card'));
-                        return productCards.map(card => {
-                            const link = card.querySelector('a');
-                            const titleEl = card.querySelector('.card-information__text, .product-title');
-                            return { 
-                                href: link ? link.href : null,
-                                name: titleEl ? titleEl.innerText.trim() : null
-                            };
-                        }).filter(item => item.href && item.href.includes('/products/'));
-                    }""")
+                    paged_url = url if page_num == 1 else f"{url}?page={page_num}"
+                    logger.info(f"[{self.retailer_name}] Loading page {page_num}/{max_pages}: {paged_url}")
                     
-                    category_count = 0
-                    for item in raw_items:
-                        if category_count >= self.config.max_items_per_category:
+                    try:
+                        page.goto(paged_url, wait_until="domcontentloaded", timeout=45000)
+                        self._simulate_human_behavior(page)
+                        
+                        # Ensure products are loaded
+                        try:
+                            page.wait_for_selector('.grid__item, .product-card', timeout=10000)
+                        except Exception:
+                            logger.warning(f"[{self.retailer_name}] No product cards found on {paged_url}")
+                            pass
+                            
+                        # Light scroll to trigger lazy loading images just in case
+                        for _ in range(2):
+                            page.evaluate("window.scrollBy(0, 900)")
+                            page.wait_for_timeout(700)
+                            
+                        raw_items = page.evaluate("""() => {
+                            const productCards = Array.from(document.querySelectorAll('.grid__item, .product-card'));
+                            return productCards.map(card => {
+                                const link = card.querySelector('a');
+                                const titleEl = card.querySelector('.card-information__text, .product-title');
+                                return { 
+                                    href: link ? link.href : null,
+                                    name: titleEl ? titleEl.innerText.trim() : null
+                                };
+                            }).filter(item => item.href && item.href.includes('/products/'));
+                        }""")
+                        
+                        page_extracted = 0
+                        for item in raw_items:
+                            if category_count >= limit:
+                                break
+                                
+                            href = item.get('href', '').strip()
+                            name = item.get('name', '').strip() or f"{self.retailer_name} Product"
+                            
+                            if not href or href in seen_urls:
+                                continue
+                                
+                            seen_urls.add(href)
+                            
+                            product = Product(
+                                name=name,
+                                price="",  # Will extract in details
+                                product_url=href,
+                                art_no=href.split('/')[-1].split('?')[0],  # Temporary ID until detail page overrides it
+                                image_url="",
+                                category=category
+                            )
+                            all_products.append(product)
+                            category_count += 1
+                            page_extracted += 1
+                            
+                        if page_extracted == 0:
+                            logger.info(f"[{self.retailer_name}] No more products found — stopping pagination.")
                             break
                             
-                        href = item.get('href', '').strip()
-                        name = item.get('name', '').strip() or f"{self.retailer_name} Product"
-                        
-                        if not href or href in seen_urls:
-                            continue
-                            
-                        seen_urls.add(href)
-                        
-                        product = Product(
-                            name=name,
-                            price="",  # Will extract in details
-                            product_url=href,
-                            art_no=href.split('/')[-1].split('?')[0],  # Temporary ID until detail page overrides it
-                            image_url="",
-                            category=category
-                        )
-                        all_products.append(product)
-                        category_count += 1
-                        
-                except Exception as e:
-                    logger.error(f"[{self.retailer_name}] Failed to scrape category '{category}': {e}")
+                    except Exception as e:
+                        logger.error(f"[{self.retailer_name}] Failed to scrape {paged_url}: {e}")
+                        break
                     
         return all_products
 

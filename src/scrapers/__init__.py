@@ -7,6 +7,7 @@ from src.scrapers.zara import ZaraScraper
 from src.scrapers.lacoste import LacosteScraper
 from src.scrapers.us_polo import UsPoloScraper
 from src.scrapers.shein import SheinScraper
+from src.scrapers.hugo_boss import HugoBossScraper
 
 __all__ = [
     "BaseScraper",
@@ -14,7 +15,8 @@ __all__ = [
     "ZaraScraper",
     "LacosteScraper",
     "UsPoloScraper",
-    "SheinScraper"
+    "SheinScraper",
+    "HugoBossScraper"
 ]
 
 def get_scrapers(config: Config) -> List[BaseScraper]:
@@ -30,7 +32,8 @@ def get_scrapers(config: Config) -> List[BaseScraper]:
         "zara": ZaraScraper,
         "lacoste": LacosteScraper,
         "us_polo": UsPoloScraper,
-        "shein": SheinScraper
+        "shein": SheinScraper,
+        "boss": HugoBossScraper
     }
     
     for key, settings in config.retailers.items():

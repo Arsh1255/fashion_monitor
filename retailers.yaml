@@ -1,42 +1,5 @@
-# hm_india:
-#   enabled: true
-#   name: "H&M India"
-#   region: "India"
-#   logo: "assets/pdf/logos/hm.png"
-#   categories:
-#     Men: "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"
-#     Women: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
+# Add the retailer specific details here
 
-# hm_us:
-#   enabled: true
-#   name: "H&M US"
-#   region: "US"
-#   logo: "assets/pdf/logos/hm.png"
-#   categories:
-#     Men: "https://www2.hm.com/en_us/men/new-arrivals/view-all.html"
-#     Women: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
-
-# zara:
-#   enabled: false
-#   name: "Zara"
-#   region: "India"
-#   logo: "assets/pdf/logos/zara.png"
-#   categories:
-#     Men: "" # TODO: Add URLs later
-#     Women: ""
-
-# lacoste:
-#   enabled: false
-#   name: "Lacoste"
-#   region: "India"
-#   logo: "assets/pdf/logos/lacoste.png"
-#   categories:
-#     Men: "" # TODO: Add URLs later
-#     Women: ""
-
-
-# Add the logo field to each retailer entry in D:\fashion_monitor\retailers.yaml.
-# The existing YAML loader needs no changes.
 hm_india:
   enabled: true
   name: "H&M India"
@@ -56,7 +19,7 @@ hm_us:
     Women: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
 
 zara:
-  enabled: false
+  enabled: true
   name: "Zara"
   region: "India"
   logo: "assets/pdf/logos/zara.png"
@@ -92,6 +55,11 @@ shein:
     Men : "https://www.sheinindia.in/s/mennewarrivals-130969"
     Women : "https://www.sheinindia.in/s/womennewarrivals-104178"
 
-# boss: { name: "BOSS", logo: "assets/pdf/logos/boss.png", ... }
-# polo: { name: "Polo", logo: "assets/pdf/logos/polo.png", ... }
-# shein: { name: "SHEIN", logo: "assets/pdf/logos/shein.png", ... }
+boss :
+  enabled : true
+  name : "HUGO BOSS"
+  region : "India"
+  logo : "assets/pdf/logos/boss.png"
+  categories : 
+    Men : "https://www.hugoboss.com/in/en/men-new-clothing/"
+    Women : "https://www.hugoboss.com/in/en/women-new-clothing/"

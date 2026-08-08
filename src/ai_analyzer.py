@@ -108,7 +108,7 @@ Task:
    - "Material"
    - "Garment Fit"
 4. Analyze the image to provide detailed textile information in the "Visual Analysis" list (2-4 bullet points). Focus strictly on observable texture, woven/knit type, and fabric drape. Do not hallucinate or repeat basic text details (like color).
-5. Provide a "Confidence Score" (e.g., "8/10" or "6/10") reflecting your certainty about the visual textile assessment. Don't hardcode 8/10 rather give your dynamic confidence about your conclusion out of 10.
+5. Provide a "Confidence Score" reflecting your certainty about the visual textile assessment based on image quality, blur, and lighting. Output a score out of 10 (e.g., "4.5/10", "6.0/10", "9.5/10"). Do NOT default to any specific score; calculate it dynamically based on how clearly you can see the fabric texture.
 
 Output strictly in this JSON format:
 {{

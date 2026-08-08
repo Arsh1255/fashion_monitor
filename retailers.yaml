@@ -10,7 +10,7 @@ hm_india:
     Women: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
 
 hm_us:
-  enabled: true
+  enabled: false
   name: "H&M US"
   region: "US"
   logo: "assets/pdf/logos/hm-seeklogo.png"
@@ -19,7 +19,7 @@ hm_us:
     Women: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
 
 zara:
-  enabled: true
+  enabled: false
   name: "Zara"
   region: "India"
   logo: "assets/pdf/logos/zara.png"
@@ -28,7 +28,7 @@ zara:
     Women: ""
 
 lacoste:
-  enabled: true
+  enabled: false
   name: "Lacoste"
   region: "India"
   logo: "assets/pdf/logos/lacoste.png"
@@ -38,7 +38,7 @@ lacoste:
 
 
 us_polo:
-  enabled : true
+  enabled : false
   name : "U.S.Polo Assn."
   region: "India"
   logo : "assets/pdf/logos/polo.png"
@@ -47,7 +47,7 @@ us_polo:
     Women: "https://uspoloassn.in/collections/new-arrivals-women-1"
 
 shein:
-  enabled : true
+  enabled : false
   name : "Shein"
   region : "India"
   logo : "assets/pdf/logos/shein.png"
@@ -56,7 +56,7 @@ shein:
     Women : "https://www.sheinindia.in/s/womennewarrivals-104178"
 
 boss :
-  enabled : true
+  enabled : false
   name : "HUGO BOSS"
   region : "India"
   logo : "assets/pdf/logos/boss.png"

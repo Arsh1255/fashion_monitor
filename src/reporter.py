@@ -86,6 +86,104 @@ class Theme:
     radius = 8
 
 
+class SparkleBullet(Flowable):
+    def __init__(self, size=10, color=Theme.green):
+        Flowable.__init__(self)
+        self.width = size
+        self.height = size
+        self.color = color
+
+    def draw(self):
+        c = self.canv
+        s = self.width
+        c.saveState()
+        c.setFillColor(self.color)
+        c.setStrokeColor(self.color)
+        ps = s * 0.28
+        c.translate(s / 2.0, s / 2.0)
+        c.rotate(45)
+        c.rect(-ps*1.5, -ps/2, ps, ps, fill=1, stroke=0)
+        c.rect(ps*0.5, -ps/2, ps, ps, fill=1, stroke=0)
+        c.rect(-ps/2, ps*0.5, ps, ps, fill=1, stroke=0)
+        c.rect(-ps/2, -ps*1.5, ps, ps, fill=1, stroke=0)
+        c.restoreState()
+
+
+class ProgressBar(Flowable):
+    def __init__(self, width, height, percentage, track_color=Theme.border, fill_color=Theme.green):
+        Flowable.__init__(self)
+        self.width = width
+        self.height = height
+        self.percentage = max(0.0, min(100.0, float(percentage)))
+        self.track_color = track_color
+        self.fill_color = fill_color
+
+    def draw(self):
+        c = self.canv
+        r = self.height / 2.0
+        c.setFillColor(self.track_color)
+        c.setStrokeColor(self.track_color)
+        c.roundRect(0, 0, self.width, self.height, r, fill=1, stroke=0)
+        
+        fill_w = self.width * (self.percentage / 100.0)
+        if fill_w > 0:
+            c.setFillColor(self.fill_color)
+            c.setStrokeColor(self.fill_color)
+            if fill_w < self.height:
+                fill_w = self.height
+            c.roundRect(0, 0, fill_w, self.height, r, fill=1, stroke=0)
+
+
+class InfoIcon(Flowable):
+    def __init__(self, size=12, color=Theme.text_muted):
+        Flowable.__init__(self)
+        self.width = size
+        self.height = size
+        self.color = color
+
+    def draw(self):
+        c = self.canv
+        s = self.width
+        c.saveState()
+        c.setStrokeColor(self.color)
+        c.setFillColor(self.color)
+        c.setLineWidth(1.2)
+        c.circle(s/2, s/2, s/2 - 1, stroke=1, fill=0)
+        c.circle(s/2, s*0.7, 0.8, stroke=0, fill=1)
+        c.line(s/2, s*0.3, s/2, s*0.55)
+        c.restoreState()
+
+
+class AILogo(Flowable):
+    def __init__(self, size=32, bg_color=Theme.surface_green, fg_color=Theme.green):
+        Flowable.__init__(self)
+        self.width = size
+        self.height = size
+        self.bg = bg_color
+        self.fg = fg_color
+
+    def draw(self):
+        c = self.canv
+        s = self.width
+        c.saveState()
+        c.setFillColor(self.bg)
+        c.setStrokeColor(self.bg)
+        c.roundRect(0, 0, s, s, s*0.25, fill=1, stroke=0)
+        
+        c.setFillColor(self.fg)
+        c.setStrokeColor(self.fg)
+        ps = s * 0.08
+        cx, cy = s * 0.45, s * 0.45
+        c.rect(cx - ps/2, cy - ps*2.5, ps, ps*5, fill=1, stroke=0)
+        c.rect(cx - ps*2.5, cy - ps/2, ps*5, ps, fill=1, stroke=0)
+        
+        cx2, cy2 = s * 0.75, s * 0.75
+        c.rect(cx2 - ps/2, cy2 - ps*1.5, ps, ps*3, fill=1, stroke=0)
+        c.rect(cx2 - ps*1.5, cy2 - ps/2, ps*3, ps, fill=1, stroke=0)
+        
+        c.restoreState()
+
+
 def _register_fonts() -> None:
     try:
         pdfmetrics.registerFont(
@@ -989,36 +1087,46 @@ class PDFReporter:
             if _has(getattr(analysis, "confidence_score", ""))
             else ""
         )
-        analysis_rows: List[List[Any]] = [
-            [
-                Paragraph(
-                    "VISUAL TREND ANALYSIS",
-                    ParagraphStyle(
-                        "AnalysisLabel",
-                        parent=self.styles["card_label"],
-                        textColor=Theme.green,
-                    ),
-                )
-            ]
-        ]
+        conf_pct = 0.0
+        conf_str = "0.0"
         if confidence:
-            analysis_rows.append(
-                [Paragraph(f"Confidence: {confidence}", self.styles["meta"])]
-            )
-        analysis_rows.append([Spacer(1, Theme.space_1)])
-        analysis_rows.extend(
-            [
-                [Paragraph(f"• {_rich_ai_text(item)}", self.styles["body"])]
-                for item in bullets
-            ]
-            or [[Paragraph("No visual attributes extracted.", self.styles["body"])]]
-        )
+            try:
+                num = float(confidence.split("/")[0].strip())
+                conf_pct = (num / 10.0) * 100
+                conf_str = f"{num:.1f}"
+            except Exception:
+                pass
+
+        title_para = Paragraph("<b>AI Visual Analysis</b>", ParagraphStyle("AiTitle", parent=self.styles["card_label"], textColor=Theme.text_primary, fontSize=11, leading=14))
+        sub_para = Paragraph("AI-generated insights about the product's visual & material characteristics.", ParagraphStyle("AiSub", parent=self.styles["meta"], textColor=Theme.text_secondary, fontSize=9, leading=12))
+        
+        header_left = Table([[AILogo(28), Table([[title_para], [sub_para]], colWidths=[width * 0.6], style=[("LEFTPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)])]], colWidths=[35, width * 0.6], style=[("VALIGN", (0,0), (-1,-1), "TOP"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)])
+        
+        conf_lbl = Paragraph("Confidence", ParagraphStyle("ConfLbl", parent=self.styles["meta"], alignment=TA_RIGHT, fontSize=8, textColor=Theme.text_secondary))
+        conf_val = Paragraph(f"<font size=14 color='{Theme.green}'><b>{conf_str}</b></font> <font size=9 color='{Theme.text_secondary}'>/ 10</font>", ParagraphStyle("ConfVal", parent=self.styles["meta"], alignment=TA_RIGHT))
+        
+        header_right = Table([[conf_lbl], [conf_val], [Spacer(1,4)], [ProgressBar(60, 6, conf_pct)]], colWidths=[80], style=[("ALIGN", (0,0), (-1,-1), "RIGHT"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)])
+        
+        header_table = Table([[header_left, header_right]], colWidths=[width - 120, 90], style=[("VALIGN", (0,0), (-1,-1), "TOP"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 10), ("TOPPADDING", (0,0), (-1,-1), 0), ("LINEBELOW", (0,0), (-1,-1), 0.5, Theme.border)])
+        
+        analysis_rows: List[List[Any]] = [[header_table], [Spacer(1, Theme.space_2)]]
+        
+        if bullets:
+            for item in bullets:
+                bullet_row = Table([[SparkleBullet(8, Theme.green), Paragraph(_rich_ai_text(item), self.styles["body"])]], colWidths=[20, width - 48], style=[("VALIGN", (0,0), (-1,-1), "TOP"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 0)])
+                analysis_rows.append([bullet_row])
+        else:
+            analysis_rows.append([Paragraph("No visual attributes extracted.", self.styles["body"])])
+            
+        disclaimer = Table([[InfoIcon(12, Theme.text_muted), Paragraph("AI analysis is based on product images and data. Results may vary.", ParagraphStyle("AiFoot", parent=self.styles["meta"], textColor=Theme.text_muted, fontSize=8))]], colWidths=[18, width - 40], style=[("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 10), ("LINEABOVE", (0,0), (-1,-1), 0.5, Theme.border)])
+        analysis_rows.append([disclaimer])
+        
         analysis_card = self._card(
             analysis_rows,
             width,
-            background=Theme.surface_green,
-            border=colors.HexColor("#C8E6C9"),
-            padding=Theme.space_2,
+            background=Theme.surface,
+            border=Theme.border,
+            padding=Theme.space_3,
         )
         # The product identity must never be stranded at the foot of a page.
         # The compact grid is bounded by the page frame, so it is safe to keep

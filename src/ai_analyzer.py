@@ -108,7 +108,7 @@ Task:
    - "Material"
    - "Garment Fit"
 4. Analyze the image to provide detailed textile information in the "Visual Analysis" list (2-4 bullet points). Focus strictly on observable texture, woven/knit type, and fabric drape. Do not hallucinate or repeat basic text details (like color).
-5. Provide a "Confidence Score" reflecting your certainty about the visual textile assessment based on image quality, blur, and lighting. Output a score out of 10 (e.g., "4.5/10", "6.0/10", "9.5/10"). Do NOT default to any specific score; calculate it dynamically based on how clearly you can see the fabric texture.
+5. Provide a "Confidence Score" reflecting your certainty about the visual textile assessment based on image quality, blur, and lighting. Output a score out of 10 (e.g., "4.5/10", "6.0/10", "9.5/10"). DO NOT simply return 8/10. Carefully evaluate the clarity of the image, the zoom level on the fabric, and lighting. A blurry or far-away shot should score low (e.g., 3/10 or 4/10), while an extreme macro shot with perfect lighting scores high (e.g., 9/10).
 
 Output strictly in this JSON format:
 {{
@@ -242,8 +242,8 @@ Output strictly in this JSON format:
         if not self.client or not self.config.nvidia_api_key:
             return True  # default to True if AI is disabled
 
-        system_prompt = "You are a fashion classifier. Respond ONLY with the word 'GARMENT' or 'ACCESSORY'."
-        user_prompt = f"Product Name: {product.name or 'Unknown'}\nURL: {product.product_url or 'N/A'}\nIs this a garment (e.g., shirt, pants, dress, jacket, sweater) or an accessory (e.g., bag, watch, sunglasses, perfume, shoes, belt)?"
+        system_prompt = "You are a strict fashion classifier. You must respond with EXACTLY ONE WORD: either 'GARMENT' or 'ACCESSORY'. Do not include any other text."
+        user_prompt = f"Product Name: {product.name or 'Unknown'}\nURL: {product.product_url or 'N/A'}\nIs this a garment (e.g., shirt, pants, dress, jacket, sweater) or an accessory (e.g., bag, watch, sunglasses, perfume, shoes, trainers, loafers, belt)? Output EXACTLY 'GARMENT' or 'ACCESSORY'."
 
         try:
             response = self.client.chat.completions.create(
@@ -256,7 +256,15 @@ Output strictly in this JSON format:
                 temperature=0.0,
             )
             content = (response.choices[0].message.content or "").strip().upper()
-            return "ACCESSORY" not in content
+            
+            # Remove any trailing punctuation the model might have added
+            content = ''.join(c for c in content if c.isalpha())
+            
+            if content not in ["GARMENT", "ACCESSORY"]:
+                logger.warning(f"Unexpected AI classification for {product.art_no}: '{content}'. Defaulting to True (GARMENT).")
+                return True
+                
+            return content == "GARMENT"
         except Exception as e:
             logger.warning(
                 f"Error checking if garment for {product.art_no}: {e}. Defaulting to True."

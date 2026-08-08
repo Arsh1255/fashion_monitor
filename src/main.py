@@ -30,7 +30,7 @@ def setup_logging(log_file: Path) -> None:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     formatter = logging.Formatter(
         "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
@@ -56,7 +56,9 @@ def main() -> int:
     logger = logging.getLogger("main")
     logger.info("=" * 60)
     logger.info("Starting Fashion Trend Monitor execution cycle...")
-    active_retailers = [s.get("name", k) for k, s in config.retailers.items() if s.get("enabled")]
+    active_retailers = [
+        s.get("name", k) for k, s in config.retailers.items() if s.get("enabled")
+    ]
     logger.info(f"Active Retailers: {', '.join(active_retailers)}")
     logger.info("=" * 60)
 
@@ -66,77 +68,136 @@ def main() -> int:
         logger.info("Initialized JSON Storage.")
 
         scrapers = get_scrapers(config)
-        
+
         # Step 2: Clean up old temporary screenshots from previous runs
         if scrapers:
             scrapers[0].cleanup_old_screenshots()
 
         master_product_dict = {"Men": {}, "Women": {}}
         all_new_products = []
-        
+
         for scraper in scrapers:
             try:
                 logger.info(f"--- Processing Retailer: {scraper.retailer_name} ---")
-                
+
                 # Step 3: Scrape New Arrivals listing pages
                 scraped_products = scraper.fetch_new_arrivals()
-                logger.info(f"[{scraper.retailer_name}] Scraped total {len(scraped_products)} items.")
-    
+                logger.info(
+                    f"[{scraper.retailer_name}] Scraped total {len(scraped_products)} items."
+                )
+
                 # Step 4: Deduplicate against seen storage
-                unseen_products = storage.filter_unseen(scraper.retailer_key, scraped_products)
-                logger.info(f"[{scraper.retailer_name}] Identified {len(unseen_products)} NEW unseen products.")
-    
+                unseen_products = storage.filter_unseen(
+                    scraper.retailer_key, scraped_products
+                )
+                logger.info(
+                    f"[{scraper.retailer_name}] Identified {len(unseen_products)} NEW unseen products."
+                )
+
                 if not unseen_products:
                     continue
-    
+
                 # Step 4b: Pre-Filter out accessories (bags, watches, etc.)
-                logger.info(f"[{scraper.retailer_name}] Filtering out non-garment accessories...")
+                logger.info(
+                    f"[{scraper.retailer_name}] Filtering out non-garment accessories..."
+                )
                 analyzer = NvidiaNimAnalyzer(config)
                 valid_unseen = []
+                category_garment_counts = {}
+                active_categories = {p.category for p in unseen_products}
                 for p in unseen_products:
+                    cat = p.category
+                    if category_garment_counts.get(cat, 0) >= config.max_items_per_category:
+                        continue
+                        
                     # Check deterministic indicators in URL or name first
                     url_lower = (p.product_url or "").lower()
                     name_lower = (p.name or "").lower()
                     excluded_product_keywords = [
-                        "watch", "perfume", "fragrance", "sunglasses", "bag", "wallet", "belt", "shoe", "sneaker",
-                        "innerwear", "underwear", "brief", "boxer", "trunk", "bra", "bralette", "panty", "panties", "lingerie",
-                        "boot", "sandal", "slipper", "heel", "slide"
+                        "watch",
+                        "perfume",
+                        "fragrance",
+                        "sunglasses",
+                        "bag",
+                        "wallet",
+                        "belt",
+                        "shoe",
+                        "sneaker",
+                        "innerwear",
+                        "underwear",
+                        "brief",
+                        "boxer",
+                        "trunk",
+                        "bra",
+                        "bralette",
+                        "panty",
+                        "panties",
+                        "lingerie",
+                        "boot",
+                        "sandal",
+                        "slipper",
+                        "heel",
+                        "slide",
+                        "trainer",
+                        "trainers",
+                        "loafer",
+                        "loafers",
                     ]
-                    if any(kw in url_lower or kw in name_lower for kw in excluded_product_keywords):
+                    if any(
+                        kw in url_lower or kw in name_lower
+                        for kw in excluded_product_keywords
+                    ):
                         continue
                     # AI Fallback
                     if not analyzer.is_garment_product(p):
                         continue
                     valid_unseen.append(p)
-    
+                    category_garment_counts[cat] = category_garment_counts.get(cat, 0) + 1
+
+                    if all(category_garment_counts.get(c, 0) >= config.max_items_per_category for c in active_categories):
+                        logger.info(
+                            f"[{scraper.retailer_name}] Reached target of {config.max_items_per_category} valid garments for all active categories. Halting evaluation of remaining candidates."
+                        )
+                        break
+
                 unseen_products = valid_unseen
                 if not unseen_products:
-                    logger.info(f"[{scraper.retailer_name}] No garments found after filtering accessories.")
+                    logger.info(
+                        f"[{scraper.retailer_name}] No garments found after filtering accessories."
+                    )
                     continue
-    
+
                 # Step 5: Scrape product detail pages via Camoufox
-                logger.info(f"[{scraper.retailer_name}] Scraping product detail pages via Camoufox...")
+                logger.info(
+                    f"[{scraper.retailer_name}] Scraping product detail pages via Camoufox..."
+                )
                 scraper.scrape_product_details_batch(unseen_products)
-    
+
                 # Step 6: Capture high-res product photos for NEW products only
-                logger.info(f"[{scraper.retailer_name}] Acquiring high-resolution product photos...")
+                logger.info(
+                    f"[{scraper.retailer_name}] Acquiring high-resolution product photos..."
+                )
                 scraper.capture_product_screenshots(unseen_products)
-    
+
                 # Filter out products that failed to download an image
                 valid_products = []
                 for p in unseen_products:
                     if p.screenshot_path and Path(p.screenshot_path).exists():
                         valid_products.append(p)
                     else:
-                        logger.warning(f"[{scraper.retailer_name}] Discarding {p.art_no} ({p.name}) due to missing/crashed image.")
-                
+                        logger.warning(
+                            f"[{scraper.retailer_name}] Discarding {p.art_no} ({p.name}) due to missing/crashed image."
+                        )
+
                 all_new_products.extend(valid_products)
-                
+
                 # Step 7: Perform NVIDIA NIM visual AI analysis (Incremental)
-                logger.info(f"[{scraper.retailer_name}] Performing NVIDIA NIM visual AI analysis on {len(valid_products)} items...")
+                logger.info(
+                    f"[{scraper.retailer_name}] Performing NVIDIA NIM visual AI analysis on {len(valid_products)} items..."
+                )
                 analyzer = NvidiaNimAnalyzer(config)
                 valid_products = analyzer.analyze_products(valid_products)
-                
+
                 # Group by category -> retailer
                 for p in valid_products:
                     if p.category not in master_product_dict:
@@ -144,9 +205,12 @@ def main() -> int:
                     if scraper.retailer_name not in master_product_dict[p.category]:
                         master_product_dict[p.category][scraper.retailer_name] = []
                     master_product_dict[p.category][scraper.retailer_name].append(p)
-                    
+
             except Exception as e:
-                logger.error(f"[{scraper.retailer_name}] Pipeline crashed for retailer: {e}", exc_info=True)
+                logger.error(
+                    f"[{scraper.retailer_name}] Pipeline crashed for retailer: {e}",
+                    exc_info=True,
+                )
                 continue
 
         if not all_new_products:
@@ -157,11 +221,12 @@ def main() -> int:
         # Step 8: Generate Separate PDF Reports Per Category
         logger.info("Generating separate PDF reports per category...")
         reporter = PDFReporter(config)
-        
+
         # Add basic try/except per category at PDF generation level
         category_pdf_paths = {}
         for cat_name, retailers_dict in master_product_dict.items():
-            if not retailers_dict: continue
+            if not retailers_dict:
+                continue
             try:
                 # We dynamically create a single-category dict just for this generation
                 single_cat_dict = {cat_name: retailers_dict}
@@ -169,8 +234,11 @@ def main() -> int:
                 if pdf_path:
                     category_pdf_paths[cat_name] = pdf_path
             except Exception as e:
-                logger.error(f"Failed to generate PDF for category {cat_name}: {e}", exc_info=True)
-                
+                logger.error(
+                    f"Failed to generate PDF for category {cat_name}: {e}",
+                    exc_info=True,
+                )
+
         for cat_name, pdf_path in category_pdf_paths.items():
             logger.info(f"Created category PDF [{cat_name}]: {pdf_path}")
 
@@ -182,12 +250,17 @@ def main() -> int:
         # Step 10: Update persistent state only after successful processing
         for category, retailers in master_product_dict.items():
             for retailer_name, products in retailers.items():
-                if not products: continue
-                scraper = next((s for s in scrapers if s.retailer_name == retailer_name), None)
+                if not products:
+                    continue
+                scraper = next(
+                    (s for s in scrapers if s.retailer_name == retailer_name), None
+                )
                 if scraper:
                     new_ids = [p.art_no for p in products]
                     storage.save_seen_ids(scraper.retailer_key, new_ids)
-                    logger.info(f"Saved {len(new_ids)} new product IDs to persistent storage for {retailer_name} ({category}).")
+                    logger.info(
+                        f"Saved {len(new_ids)} new product IDs to persistent storage for {retailer_name} ({category})."
+                    )
 
         logger.info("=" * 60)
         logger.info("Fashion Trend Monitor cycle completed successfully.")
@@ -195,7 +268,9 @@ def main() -> int:
         return 0
 
     except Exception as e:
-        logger.critical(f"Unhandled exception during execution cycle: {e}", exc_info=True)
+        logger.critical(
+            f"Unhandled exception during execution cycle: {e}", exc_info=True
+        )
         return 1
 
 

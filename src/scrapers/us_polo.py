@@ -16,7 +16,7 @@ class UsPoloScraper(BaseScraper):
         all_products: List[Product] = []
         seen_urls: Set[str] = set()
 
-        for category, url in self.categories.items():
+        for category, region, url in self.get_category_urls():
             if not url:
                 continue
                 
@@ -25,7 +25,7 @@ class UsPoloScraper(BaseScraper):
             with Camoufox(headless=self.config.headless) as browser:
                 page = browser.new_page()
                 
-                limit = self.config.max_items_per_category
+                limit = self.config.max_candidate_pool_size
                 max_pages = self.config.max_pages_per_category
                 category_count = 0
                 

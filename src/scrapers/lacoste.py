@@ -19,7 +19,9 @@ class LacosteScraper(BaseScraper):
         
         products = []
         with Camoufox(headless=self.config.headless) as browser:
-            for category_name, url in self.categories.items():
+            page = browser.new_page()
+
+            for category_name, region_name, url in self.get_category_urls():
                 if not url:
                     continue
                 try:
@@ -53,7 +55,7 @@ class LacosteScraper(BaseScraper):
                         }).filter(item => item.name && item.url);
                     }""")
                     
-                    limit = self.config.max_items_per_category
+                    limit = self.config.max_candidate_pool_size
                     category_count = 0
                     
                     for item in items:

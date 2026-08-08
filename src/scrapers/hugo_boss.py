@@ -15,7 +15,7 @@ class HugoBossScraper(BaseScraper):
         all_products: List[Product] = []
         seen_art_nos: Set[str] = set()
 
-        for category, url in self.categories.items():
+        for category, region, url in self.get_category_urls():
             if not url:
                 continue
 
@@ -28,7 +28,7 @@ class HugoBossScraper(BaseScraper):
             with Camoufox(headless=self.config.headless) as browser:
                 page = browser.new_page()
                 
-                while category_count < self.config.max_items_per_category:
+                while category_count < self.config.max_candidate_pool_size:
                     page_url = f"{url}?start={start}&sz={chunk_size}"
                     try:
                         page.goto(page_url, wait_until="domcontentloaded", timeout=60000)
@@ -49,7 +49,7 @@ class HugoBossScraper(BaseScraper):
                             
                         added_in_page = 0
                         for href in unique_hrefs:
-                            if category_count >= self.config.max_items_per_category:
+                            if category_count >= self.config.max_candidate_pool_size:
                                 break
                                 
                             clean_path = href.split("?")[0].split("#")[0].rstrip("/")

@@ -19,6 +19,15 @@ __all__ = [
     "HugoBossScraper"
 ]
 
+SCRAPERS = {
+    "hm": HMScraper,
+    "zara": ZaraScraper,
+    "lacoste": LacosteScraper,
+    "us_polo": UsPoloScraper,
+    "shein": SheinScraper,
+    "boss": HugoBossScraper
+}
+
 def get_scrapers(config: Config) -> List[BaseScraper]:
     """
     Factory function to read the retailers dictionary from Config and return
@@ -27,13 +36,12 @@ def get_scrapers(config: Config) -> List[BaseScraper]:
     scrapers = []
     
     mapping = {
-        "hm_india": HMScraper,
-        "hm_us": HMScraper,
-        "zara": ZaraScraper,
+        "hm": HMScraper,
         "lacoste": LacosteScraper,
         "us_polo": UsPoloScraper,
         "shein": SheinScraper,
-        "boss": HugoBossScraper
+        "boss": HugoBossScraper,
+        "zara": ZaraScraper
     }
     
     for key, settings in config.retailers.items():

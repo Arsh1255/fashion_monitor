@@ -14,11 +14,11 @@ from dotenv import load_dotenv
 # Project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-DEFAULT_SECTIONS = [
-    ("Men", "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"),
-    ("Women", "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"),
-    ("Kids", "https://www2.hm.com/en_in/kids/new-arrivals/view-all.html"),
-]
+# DEFAULT_SECTIONS = [
+#     ("Men", "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"),
+#     ("Women", "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"),
+#     ("Kids", "https://www2.hm.com/en_in/kids/new-arrivals/view-all.html"),
+# ]
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class Config:
     headless: bool
     max_pages_per_category: int
     max_items_per_category: int
+    max_candidate_pool_size: int
     nav_timeout: int
 
     # SMTP Settings
@@ -81,6 +82,7 @@ def load_config(env_path: Optional[Path] = None) -> Config:
 
     # Parse retailers.yaml
     import yaml
+
     retailers_path = PROJECT_ROOT / "retailers.yaml"
     retailers_config = {}
     if retailers_path.exists():
@@ -89,14 +91,19 @@ def load_config(env_path: Optional[Path] = None) -> Config:
 
     config = Config(
         nvidia_api_key=os.getenv("NVIDIA_API_KEY", ""),
-        nvidia_nim_model=os.getenv("NVIDIA_NIM_MODEL", "meta/llama-3.2-11b-vision-instruct"),
-        nvidia_base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        nvidia_nim_model=os.getenv(
+            "NVIDIA_NIM_MODEL", "meta/llama-3.2-11b-vision-instruct"
+        ),
+        nvidia_base_url=os.getenv(
+            "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        ),
         ai_max_retries=int(os.getenv("AI_MAX_RETRIES", "4")),
         ai_request_delay=float(os.getenv("AI_REQUEST_DELAY", "1.5")),
         retailers=retailers_config,
         headless=os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes"),
         max_pages_per_category=int(os.getenv("MAX_PAGES_PER_CATEGORY", "3")),
         max_items_per_category=int(os.getenv("MAX_ITEMS_PER_CATEGORY", "100")),
+        max_candidate_pool_size=int(os.getenv("MAX_CANDIDATE_POOL_SIZE", "50")),
         nav_timeout=int(os.getenv("NAV_TIMEOUT", "45000")),
         smtp_server=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),

@@ -1,34 +1,31 @@
 # Add the retailer specific details here
 
-hm_india:
+hm:
   enabled: true
-  name: "H&M India"
-  region: "India"
+  name: "H&M"
   logo: "assets/pdf/logos/hm-seeklogo.png"
   categories:
-    Men: "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"
-    Women: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
-
-hm_us:
-  enabled: false
-  name: "H&M US"
-  region: "US"
-  logo: "assets/pdf/logos/hm-seeklogo.png"
-  categories:
-    Men: "https://www2.hm.com/en_us/men/new-arrivals/view-all.html"
-    Women: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
+    Men:
+      India: "https://www2.hm.com/en_in/men/new-arrivals/view-all.html"
+      US: "https://www2.hm.com/en_us/men/new-arrivals/view-all.html"
+    Women:
+      India: "https://www2.hm.com/en_in/ladies/new-arrivals/view-all.html"
+      US: "https://www2.hm.com/en_us/women/new-arrivals/view-all.html"
 
 zara:
-  enabled: false
+  enabled: true
   name: "Zara"
-  region: "India"
   logo: "assets/pdf/logos/zara.png"
   categories:
-    Men: ""
-    Women: ""
+    Men: 
+      India: "https://www.zara.com/in/en/man-collection-l622.html"
+      US: "https://www.zara.com/us/en/man-collection-l622.html"
+    Women:
+      India : "https://www.zara.com/in/en/woman-dresses-l1066.html"
+      US : "https://www.zara.com/us/en/woman-dresses-l1066.html"
 
 lacoste:
-  enabled: false
+  enabled: true
   name: "Lacoste"
   region: "India"
   logo: "assets/pdf/logos/lacoste.png"
@@ -38,7 +35,7 @@ lacoste:
 
 
 us_polo:
-  enabled : false
+  enabled : true
   name : "U.S.Polo Assn."
   region: "India"
   logo : "assets/pdf/logos/polo.png"
@@ -47,7 +44,7 @@ us_polo:
     Women: "https://uspoloassn.in/collections/new-arrivals-women-1"
 
 shein:
-  enabled : false
+  enabled : true
   name : "Shein"
   region : "India"
   logo : "assets/pdf/logos/shein.png"
@@ -56,7 +53,7 @@ shein:
     Women : "https://www.sheinindia.in/s/womennewarrivals-104178"
 
 boss :
-  enabled : false
+  enabled : true
   name : "HUGO BOSS"
   region : "India"
   logo : "assets/pdf/logos/boss.png"

@@ -48,3 +48,12 @@ test_scraper.py
 scratch/
 obsolete/
 plan.txt
+
+# Standard Python/Testing exclusions
+.coverage
+htmlcov/
+*.sqlite3
+
+# Playwright/Browser artifacts (if ever stored locally)
+playwright-report/
+test-results/

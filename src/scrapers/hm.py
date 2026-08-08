@@ -170,7 +170,7 @@ class HMScraper(BaseScraper):
         logger.info(f"--- Scraping Category: '{category_name}' ({base_url}) ---")
         all_products: List[Product] = []
         seen_urls: set = set()
-        limit = self.config.max_items_per_category
+        limit = self.config.max_candidate_pool_size
         max_pages = self.config.max_pages_per_category
 
         browser_headers = {
@@ -232,13 +232,19 @@ class HMScraper(BaseScraper):
     def fetch_new_arrivals(self) -> List[Product]:
         """Scrape new arrival listings across all configured category target URLs."""
         all_products: List[Product] = []
+        seen_art_nos = set()
 
         with Camoufox(headless=self.config.headless) as browser:
             page = browser.new_page()
 
-            for category_name, category_url in self.categories.items():
+            for category_name, region_name, category_url in self.get_category_urls():
                 cat_products = self.scrape_category_listings(page, category_name, category_url)
-                all_products.extend(cat_products)
+                
+                # Deduplicate by art_no internally so cross-region products don't stack up
+                for p in cat_products:
+                    if p.art_no not in seen_art_nos:
+                        seen_art_nos.add(p.art_no)
+                        all_products.append(p)
 
         logger.info(f"Successfully scraped total {len(all_products)} products across all categories.")
         return all_products

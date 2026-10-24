@@ -27,6 +27,17 @@ class BaseScraper(ABC):
         self.categories = categories
         self.screenshot_dir = config.screenshot_dir
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)
+        retailer_settings = config.retailers.get(retailer_key, {})
+        self.max_candidate_pool_size = int(
+            retailer_settings.get(
+                "max_candidate_pool_size", config.max_candidate_pool_size
+            )
+        )
+        self.max_pages_per_category = int(
+            retailer_settings.get(
+                "max_pages_per_category", config.max_pages_per_category
+            )
+        )
 
     def cleanup_old_screenshots(self) -> int:
         """Delete previous run image files from the screenshots directory."""

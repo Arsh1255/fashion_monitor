@@ -170,8 +170,8 @@ class HMScraper(BaseScraper):
         logger.info(f"--- Scraping Category: '{category_name}' ({base_url}) ---")
         all_products: List[Product] = []
         seen_urls: set = set()
-        limit = self.config.max_candidate_pool_size
-        max_pages = self.config.max_pages_per_category
+        limit = self.max_candidate_pool_size
+        max_pages = self.max_pages_per_category
 
         browser_headers = {
             "Accept-Language": "en-US,en;q=0.9",

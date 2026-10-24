@@ -25,8 +25,8 @@ class UsPoloScraper(BaseScraper):
             with Camoufox(headless=self.config.headless) as browser:
                 page = browser.new_page()
                 
-                limit = self.config.max_candidate_pool_size
-                max_pages = self.config.max_pages_per_category
+                limit = self.max_candidate_pool_size
+                max_pages = self.max_pages_per_category
                 category_count = 0
                 
                 for page_num in range(1, max_pages + 1):

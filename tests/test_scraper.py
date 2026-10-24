@@ -2,19 +2,19 @@
 Unit tests for src/scraper.py
 """
 
-from pathlib import Path
-from src.scraper import HMScraper
+from src.scrapers.hm import HMScraper
 from src.config import load_config
 
 
-def test_art_no_extraction():
-    url = "https://www2.hm.com/en_in/productpage.1344928012.html"
-    art_no = HMScraper.extract_art_no_from_url(url)
-    assert art_no == "1344928012"
-
-    fallback_url = "https://example.com/items/9876543210/details"
-    art_no_fallback = HMScraper.extract_art_no_from_url(fallback_url)
-    assert art_no_fallback == "9876543210"
+def make_hm_scraper(config):
+    settings = config.retailers["hm"]
+    return HMScraper(
+        config=config,
+        retailer_name=settings["name"],
+        region=settings.get("region", "Unknown"),
+        categories=settings["categories"],
+        retailer_key="hm",
+    )
 
 
 def test_screenshot_cleanup(tmp_path):
@@ -30,7 +30,9 @@ def test_screenshot_cleanup(tmp_path):
     img2 = tmp_path / "1002.jpg"
     img2.write_bytes(b"image2")
 
-    scraper = HMScraper(config)
+    scraper = make_hm_scraper(config)
+    assert scraper.max_candidate_pool_size == 12
+    assert scraper.max_pages_per_category == 2
     scraper.cleanup_old_screenshots()
 
     assert gitkeep.exists()

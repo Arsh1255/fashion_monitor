@@ -37,7 +37,7 @@ class SheinScraper(BaseScraper):
                         
                         # Break early if we have enough items in DOM
                         cards_in_dom = page.evaluate("document.querySelectorAll('a[href*=\"/p/\"]').length")
-                        if cards_in_dom >= self.config.max_candidate_pool_size:
+                        if cards_in_dom >= self.max_candidate_pool_size:
                             break
 
                     raw_items = page.evaluate("""() => {
@@ -52,7 +52,7 @@ class SheinScraper(BaseScraper):
 
                     category_count = 0
                     for item in raw_items:
-                        if category_count >= self.config.max_candidate_pool_size:
+                        if category_count >= self.max_candidate_pool_size:
                             break
 
                         href = item.get('href', '').strip()

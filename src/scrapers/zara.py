@@ -47,7 +47,7 @@ class ZaraScraper(BaseScraper):
                         continue
                         
                     for href in unique_hrefs:
-                        if category_count >= self.config.max_candidate_pool_size:
+                        if category_count >= self.max_candidate_pool_size:
                             break
                             
                         # Extract URL ID (e.g., -p01564770.html -> 01564770)

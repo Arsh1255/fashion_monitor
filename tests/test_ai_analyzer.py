@@ -8,8 +8,11 @@ from src.config import load_config
 from src.models import Product, AIAnalysis
 
 
-def test_ai_analyzer_fallback(tmp_path):
-    config = load_config()
+def test_ai_analyzer_fallback(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("NVIDIA_API_KEY=\n", encoding="utf-8")
+    config = load_config(env_file)
     analyzer = NvidiaNimAnalyzer(config)
 
     # Test product without screenshot

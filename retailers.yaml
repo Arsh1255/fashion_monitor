@@ -3,6 +3,9 @@
 hm:
   enabled: true
   name: "H&M"
+  max_items_per_category: 2
+  max_candidate_pool_size: 12
+  max_pages_per_category: 2
   logo: "assets/pdf/logos/hm-seeklogo.png"
   categories:
     Men:
@@ -15,6 +18,9 @@ hm:
 zara:
   enabled: true
   name: "Zara"
+  max_items_per_category: 2
+  max_candidate_pool_size: 12
+  max_pages_per_category: 2
   logo: "assets/pdf/logos/zara.png"
   categories:
     Men: 
@@ -27,6 +33,9 @@ zara:
 lacoste:
   enabled: true
   name: "Lacoste"
+  max_items_per_category: 2
+  max_candidate_pool_size: 12
+  max_pages_per_category: 2
   region: "India"
   logo: "assets/pdf/logos/lacoste.png"
   categories:
@@ -37,6 +46,9 @@ lacoste:
 us_polo:
   enabled : true
   name : "U.S.Polo Assn."
+  max_items_per_category: 2
+  max_candidate_pool_size: 12
+  max_pages_per_category: 2
   region: "India"
   logo : "assets/pdf/logos/polo.png"
   categories:
@@ -46,6 +58,9 @@ us_polo:
 shein:
   enabled : true
   name : "Shein"
+  max_items_per_category: 2
+  max_candidate_pool_size: 12
+  max_pages_per_category: 2
   region : "India"
   logo : "assets/pdf/logos/shein.png"
   categories:
@@ -55,6 +70,9 @@ shein:
 boss :
   enabled : true
   name : "HUGO BOSS"
+  max_items_per_category: 2
+  max_candidate_pool_size: 12
+  max_pages_per_category: 2
   region : "India"
   logo : "assets/pdf/logos/boss.png"
   categories : 

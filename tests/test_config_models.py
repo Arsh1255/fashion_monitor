@@ -39,12 +39,14 @@ def test_config_loader(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
         "NVIDIA_API_KEY=test-api-key\n"
-        "TARGET_URL=https://example.com/men\n"
+        "SMTP_USER=\n"
+        "SMTP_PASSWORD=\n"
+        "NOTIFICATION_EMAIL=\n"
         "HEADLESS=false\n"
     )
 
     cfg = load_config(env_file)
     assert cfg.nvidia_api_key == "test-api-key"
-    assert len(cfg.target_urls) > 0
+    assert cfg.retailers["hm"]["max_items_per_category"] == 2
     assert cfg.headless is False
     assert isinstance(cfg.storage_path, Path)

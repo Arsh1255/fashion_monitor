@@ -79,6 +79,12 @@ def main() -> int:
         for scraper in scrapers:
             try:
                 logger.info(f"--- Processing Retailer: {scraper.retailer_name} ---")
+                retailer_settings = config.retailers.get(scraper.retailer_key, {})
+                max_items_per_category = int(
+                    retailer_settings.get(
+                        "max_items_per_category", config.max_items_per_category
+                    )
+                )
 
                 # Step 3: Scrape New Arrivals listing pages
                 scraped_products = scraper.fetch_new_arrivals()
@@ -107,7 +113,7 @@ def main() -> int:
                 active_categories = {p.category for p in unseen_products}
                 for p in unseen_products:
                     cat = p.category
-                    if category_garment_counts.get(cat, 0) >= config.max_items_per_category:
+                    if category_garment_counts.get(cat, 0) >= max_items_per_category:
                         continue
                         
                     # Check deterministic indicators in URL or name first
@@ -154,9 +160,9 @@ def main() -> int:
                     valid_unseen.append(p)
                     category_garment_counts[cat] = category_garment_counts.get(cat, 0) + 1
 
-                    if all(category_garment_counts.get(c, 0) >= config.max_items_per_category for c in active_categories):
+                    if all(category_garment_counts.get(c, 0) >= max_items_per_category for c in active_categories):
                         logger.info(
-                            f"[{scraper.retailer_name}] Reached target of {config.max_items_per_category} valid garments for all active categories. Halting evaluation of remaining candidates."
+                            f"[{scraper.retailer_name}] Reached target of {max_items_per_category} valid garments for all active categories. Halting evaluation of remaining candidates."
                         )
                         break
 
@@ -242,13 +248,25 @@ def main() -> int:
         for cat_name, pdf_path in category_pdf_paths.items():
             logger.info(f"Created category PDF [{cat_name}]: {pdf_path}")
 
+        if not category_pdf_paths:
+            logger.error("No category PDF reports were generated; product IDs were not saved.")
+            return 1
+
         # Step 8: Dispatch Email Notification with attachments
         logger.info("Sending email notification with category PDF reports...")
         email_sender = EmailSender(config)
-        email_sender.send_report_email(category_pdf_paths, len(all_new_products))
+        if not email_sender.send_report_email(
+            category_pdf_paths, len(all_new_products)
+        ):
+            logger.error(
+                "Report email was not delivered; product IDs were not saved so the run can be retried."
+            )
+            return 1
 
         # Step 10: Update persistent state only after successful processing
         for category, retailers in master_product_dict.items():
+            if category not in category_pdf_paths:
+                continue
             for retailer_name, products in retailers.items():
                 if not products:
                     continue

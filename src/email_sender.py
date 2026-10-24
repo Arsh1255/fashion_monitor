@@ -63,7 +63,10 @@ class EmailSender:
         today_str = datetime.now().strftime("%B %d, %Y")
         subject = f"[Fashion Monitor] New Arrivals Trend Report ({product_count} New Items) - {today_str}"
 
-        categories_str = ", ".join([c for c, _ in self.config.target_urls])
+        if isinstance(pdf_paths, dict):
+            categories_str = ", ".join(str(category) for category in pdf_paths)
+        else:
+            categories_str = "Fashion categories"
 
         html_body = f"""
         <html>

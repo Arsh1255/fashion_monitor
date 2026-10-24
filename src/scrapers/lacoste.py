@@ -55,7 +55,7 @@ class LacosteScraper(BaseScraper):
                         }).filter(item => item.name && item.url);
                     }""")
                     
-                    limit = self.config.max_candidate_pool_size
+                    limit = self.max_candidate_pool_size
                     category_count = 0
                     
                     for item in items:

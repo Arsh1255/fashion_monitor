@@ -1,39 +1,91 @@
 # Fashion Trend Monitor
 
-Fashion Trend Monitor checks configured retailer new-arrival pages, filters out previously seen items and accessories, analyzes a small set of new garments, and creates polished PDF reports grouped by category. It can email the reports through SMTP.
+Fashion Trend Monitor turns retailer-specific new-arrival pages into a consistent product dataset, then produces category-based PDF reports with product images and visual analysis. The current configuration covers H&M, Zara, Lacoste, U.S. Polo Assn., SHEIN, and HUGO BOSS.
 
-## Retailers
+## The pipeline
 
-The current configuration in [`retailers.yaml`](retailers.yaml) enables:
+```mermaid
+flowchart TD
+    A[Load .env and retailers.yaml] --> B[Remove old product images]
+    B --> C[Visit each enabled retailer]
+    C --> D[Collect listing candidates]
+    D --> E[Deduplicate by retailer product ID]
+    E --> F[Filter accessories and apply category limits]
+    F --> G[Scrape product details]
+    G --> H[Download product images]
+    H --> I{Image available?}
+    I -- No --> J[Skip product]
+    I -- Yes --> K[Analyze text and image]
+    K --> L[Group by category and retailer]
+    L --> M[Generate category PDFs]
+    M --> N{Reports generated and delivery accepted?}
+    N -- No --> O[Keep IDs eligible for a later run]
+    N -- Yes --> P[Save processed IDs per retailer]
+```
 
-- H&M
-- Zara
-- Lacoste
-- U.S. Polo Assn.
-- SHEIN
-- HUGO BOSS
+The workflow is sequential. Each retailer scraper returns the shared `Product` model, so the storage, analysis, and PDF stages can use the same downstream pipeline.
 
-Retailers and their category URLs are configured in YAML. H&M and Zara support regional URLs; the other entries currently use their configured India URLs. Set `enabled: false` to skip a retailer.
+## What makes the scraping retailer-specific
 
-## How the run works
+Retailer sites expose different listing structures, product identifiers, pagination, and detail data. The scrapers share a small interface, but keep the extraction logic that fits each site.
 
-1. Each enabled retailer scraper collects candidates from its configured category pages using Camoufox.
-2. Product IDs are checked against `data/seen_products.json` separately for each retailer.
-3. Candidate garments are capped per category and retailer, then product details and images are collected.
-4. NVIDIA NIM analyzes the image and scraped product text when an API key is configured.
-5. The PDF reporter creates a separate report for each category, with retailer sections and product analysis cards.
-6. Reports are emailed when SMTP credentials are configured, and successfully processed product IDs are saved.
+- H&M and Zara can be configured with regional listing URLs. Their products are deduplicated across configured regions.
+- H&M uses article codes and site-specific selectors. Its implementation checks for access-denied pages. Source comments document Akamai blocking as the reason Camoufox was chosen for its browser sessions.
+- Zara has a separate extraction path. It scrolls to load products, reads product IDs from URL patterns, and checks `zara.analyticsData` and page metadata for product details.
+- Lacoste, U.S. Polo Assn., SHEIN, and HUGO BOSS each have their own scraper module for their listing and detail-page structures.
 
-The per-retailer limits in `retailers.yaml` are currently **2 garments**, **12 listing candidates**, and **2 pages** per category. This keeps development runs small at both the listing and product-processing stages. Each YAML value overrides its matching environment variable; `MAX_ITEMS_PER_CATEGORY`, `MAX_CANDIDATE_POOL_SIZE`, and `MAX_PAGES_PER_CATEGORY` provide fallbacks for retailers without individual limits.
+The project also uses a shared browsing helper that waits for a randomized interval, moves the pointer, and occasionally scrolls. Some scrapers add their own pagination or lazy-loading steps. These measures support site-specific browsing behavior; they do not guarantee that a retailer will allow access on every run.
 
-## Requirements
+Camoufox is a Firefox-based browser with fingerprint handling implemented at the browser's C++ layer. That is browser-engine code, not an operating-system kernel patch. Its purpose is to keep browser-reported properties consistent; it cannot guarantee that a WAF will accept a session. See the [Camoufox fingerprint documentation](https://camoufox.com/fingerprint/).
 
-- Python 3.10 or newer
-- A Camoufox browser build
-- NVIDIA NIM API key for live AI analysis (optional; without one, the analyzer returns its built-in default analysis)
-- SMTP account for email delivery (optional)
+## Candidate limits for development
+
+Each retailer currently has these values in `retailers.yaml`:
+
+| Limit | Current value | What it controls |
+|---|---:|---|
+| `max_items_per_category` | 2 | Final accepted garments per category and retailer |
+| `max_candidate_pool_size` | 12 | Listing candidates collected per category before filtering |
+| `max_pages_per_category` | 2 | Page-based pagination where that scraper uses page counts |
+
+Candidate and final garment limits are separate. The candidate pool gives the pipeline room to remove previously seen items and accessories before filling the final garment quota. Scrapers that use scrolling or retailer-specific pagination retain those mechanics while respecting the candidate cap.
+
+## Product and resource lifecycle
+
+At the start of a run, the shared image folder is cleared of old `.png`, `.jpg`, and `.jpeg` files. The current run downloads product images there for analysis and PDF generation. The images remain available after the run and are removed at the next run.
+
+For products that go through a fresh visual-analysis call, the analyzer wrapper clears `raw_page_text` after analysis returns. Product records and analysis results remain available for grouping and PDF generation. This releases the larger page-text field without discarding data needed by the report.
+
+Product IDs are stored separately for each retailer. The pipeline saves IDs only for categories whose PDF was generated and when email delivery succeeds or is intentionally skipped because SMTP is not configured. Failed PDF generation or email delivery leaves those IDs eligible for a later run.
+
+## AI analysis and fallback behavior
+
+The pipeline first filters obvious accessories using product names and URLs. When NVIDIA NIM is configured, it can also classify remaining candidates as garments or accessories. That classifier returns a permissive garment result if the key is absent or the request fails, so an AI outage does not stop scraping.
+
+For products with images, `AIRequestManager` sends visual-analysis requests one at a time, adds a configurable delay between them, records batch outcomes, and isolates unexpected item failures. The analyzer retries rate-limited visual-analysis calls with exponential backoff. Other request errors become an error analysis for that product. If no NVIDIA key is configured, the analyzer returns clearly labeled default analysis instead of calling the service. The garment-classification request has its own fallback and does not use the visual-analysis retry loop.
+
+The analyzer uses scraped product text for product attributes and the downloaded image for visual observations. The PDF can therefore show text-derived details alongside visual notes and a confidence score.
+
+## PDF reports
+
+One shared ReportLab renderer creates a separate PDF for each category. Each report can include a branded cover, contents and navigation, retailer sections, product images, product details, and AI visual-analysis cards. Retailers provide names, logos, and products as data; the presentation stays in one common generator.
+
+Generated reports are written to the folder configured by `OUTPUT_PATH` (the default is `output/`). Report generation is covered by the unit tests; no retailer site or NVIDIA service is needed to run those tests.
+
+## Adding a retailer
+
+To add a brand:
+
+1. Add its enabled flag, display name, logo, category URLs, and optional limits to `retailers.yaml`.
+2. Add a scraper module under `src/scrapers/` that implements `BaseScraper` methods for listing discovery, product details, and image acquisition.
+3. Register the scraper in `src/scrapers/__init__.py`.
+4. Add or update unit tests for its ID extraction and configuration.
+
+The new scraper returns the shared `Product` model. The existing deduplication, garment filtering, AI analysis, email, and PDF stages then handle it without a retailer-specific report generator.
 
 ## Setup
+
+Python 3.10 or newer is recommended.
 
 ### Windows PowerShell
 
@@ -57,57 +109,53 @@ python -m camoufox fetch
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials and runtime settings. Camoufox uses its own browser build; `python -m camoufox fetch` downloads it after the Python package is installed. On Windows, Smart App Control may block Camoufox; the operational notes in [`REPORT.md`](REPORT.md) describe using Linux or WSL2 in that case.
+Edit `.env` with your NVIDIA and SMTP credentials and runtime settings. The project creates runtime folders as needed. Camoufox browser binaries are installed separately with `python -m camoufox fetch`. On Windows, Smart App Control may block Camoufox; `REPORT.md` records the Linux and WSL2 operational note.
 
 ## Configuration
 
 ### `retailers.yaml`
 
-Each retailer entry controls whether it is active, its display name, logo, category URLs, and optional `max_items_per_category`, `max_candidate_pool_size`, and `max_pages_per_category` limits. Category URLs may be a single URL or a map of region names to URLs.
+Each retailer entry controls whether it is enabled, its display name, logo, category URLs, and optional per-retailer limits. A category can map to one URL or to region-specific URLs.
 
 ### `.env`
 
-| Variable | Purpose | Default in `.env.example` |
+| Variable | Purpose | Example default |
 |---|---|---|
-| `NVIDIA_API_KEY` | NVIDIA NIM API key; leave empty to use default analysis | Placeholder |
-| `NVIDIA_NIM_MODEL` | Vision model name | `meta/llama-3.2-11b-vision-instruct` |
+| `NVIDIA_API_KEY` | NVIDIA NIM key; empty uses default analysis | Placeholder |
+| `NVIDIA_NIM_MODEL` | Vision model | `meta/llama-3.2-11b-vision-instruct` |
 | `NVIDIA_BASE_URL` | NVIDIA API endpoint | `https://integrate.api.nvidia.com/v1` |
-| `AI_MAX_RETRIES` | AI request retry limit | `4` |
-| `AI_REQUEST_DELAY` | Delay between AI requests, in seconds | `1.5` |
+| `AI_MAX_RETRIES` | Attempts for rate-limited visual analysis | `4` |
+| `AI_REQUEST_DELAY` | Delay between visual-analysis requests, in seconds | `1.5` |
 | `HEADLESS` | Run browser without a visible window | `true` |
-| `MAX_PAGES_PER_CATEGORY` | Fallback maximum listing pages per category | `2` |
-| `MAX_ITEMS_PER_CATEGORY` | Fallback final garment limit per category and retailer | `2` |
-| `MAX_CANDIDATE_POOL_SIZE` | Fallback listing candidates collected per category | `12` |
+| `MAX_PAGES_PER_CATEGORY` | Fallback page limit | `2` |
+| `MAX_ITEMS_PER_CATEGORY` | Fallback final garment limit | `2` |
+| `MAX_CANDIDATE_POOL_SIZE` | Fallback listing candidate limit | `12` |
 | `NAV_TIMEOUT` | Navigation timeout, in milliseconds | `45000` |
 | `SMTP_SERVER`, `SMTP_PORT` | SMTP host and port | Gmail, `587` |
 | `SMTP_USER`, `SMTP_PASSWORD` | SMTP login | Placeholder |
 | `NOTIFICATION_EMAIL` | Report recipient | Placeholder |
-| `STORAGE_PATH` | Seen-product JSON path | `data/seen_products.json` |
-| `OUTPUT_PATH` | PDF output path (reports use its parent folder) | `output/report.pdf` |
-| `SCREENSHOT_DIR` | Downloaded product image directory | `screenshots` |
+| `STORAGE_PATH` | Seen-product state | `data/seen_products.json` |
+| `OUTPUT_PATH` | Output path; reports use its parent folder | `output/report.pdf` |
+| `SCREENSHOT_DIR` | Product image folder | `screenshots` |
 | `LOG_FILE` | Application log path | `logs/app.log` |
 
-Relative paths are resolved from the project directory. Runtime folders are created automatically.
+Per-retailer YAML values override the matching limit variables. Relative paths are resolved from the project directory.
 
-## Run
+## Run and test
 
-With the virtual environment active and `.env` configured:
+Run one monitoring cycle:
 
-```bash
+```powershell
 python -m src.main
 ```
 
-The application writes category PDFs under `output/`, product images under `screenshots/`, run logs under `logs/`, and retailer-specific deduplication state to `data/seen_products.json`. These runtime artifacts are ignored by Git.
+Run the offline unit tests:
 
-## Tests
-
-Install the project requirements, then run:
-
-```bash
+```powershell
 python -m pytest
 ```
 
-Tests use temporary paths and do not visit retailer sites or call NVIDIA NIM.
+The tests use temporary files and mock external services. They do not prove that retailer websites, NVIDIA credentials, or SMTP delivery will work in a live run.
 
 ## Project layout
 
@@ -117,18 +165,19 @@ fashion_monitor/
 ├── data/                   # Persistent seen-product state
 ├── logs/                   # Runtime logs
 ├── output/                 # Generated category reports
-├── screenshots/            # Downloaded product images for the current run
+├── screenshots/            # Downloaded product images
 ├── src/
-│   ├── scrapers/            # Retailer-specific Camoufox scrapers
-│   ├── ai_analyzer.py       # NVIDIA NIM visual and text analysis
+│   ├── scrapers/            # Retailer-specific browser and extraction logic
+│   ├── ai_analyzer.py       # NVIDIA NIM requests and fallbacks
+│   ├── ai_manager.py        # Sequential request batching and isolation
 │   ├── config.py            # Environment and YAML configuration
 │   ├── email_sender.py      # SMTP report delivery
 │   ├── main.py              # Monitoring workflow
 │   ├── models.py            # Product and analysis data models
-│   ├── reporter.py          # PDF report generation
-│   └── storage.py           # Per-retailer seen-product storage
-├── tests/                   # Unit tests
+│   ├── reporter.py          # Shared PDF report generator
+│   └── storage.py           # Per-retailer seen-product state
+├── tests/                   # Offline unit tests
 ├── .env.example             # Environment template
-├── retailers.yaml           # Retailer URLs and per-retailer limits
+├── retailers.yaml           # Retailer URLs and development limits
 └── requirements.txt         # Python dependencies
 ```

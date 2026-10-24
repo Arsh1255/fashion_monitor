@@ -1,93 +1,69 @@
-# Fashion Trend Monitor — Developer Handoff & Architecture Notes
+# Fashion Trend Monitor: Developer Notes
 
-> [!IMPORTANT]
-> Read this before modifying scraper architecture or pipeline limits.
+This file records the architecture decisions that are easy to break during scraper or pipeline changes. Check the relevant retailer module and its current configuration before changing behavior.
 
-## 1. Critical Rule: Understand Before Refactoring
-The current architecture contains deliberate decisions based on extensive investigation of retailer websites. Do not blindly refactor working scraper logic because something appears more elegant or generic. 
+## Pipeline contract
 
-## 2. Scraping Architecture — Do Not Blindly Replace DOM Extraction
-Retailer scraping logic was developed after detailed DOM analysis.
-- Do not assume that clicking accordions, expanding UI elements, or interacting with the visible website UI is the most reliable way to extract product information.
-- Where possible, the existing approach of extracting information through DOM/JavaScript injection should be preserved because it is more reliable and less dependent on fragile UI interactions.
-- Before changing a scraper, inspect how the current scraper obtains the data and understand why that method was chosen.
-- Do not replace existing extraction with generic browser-click automation without verifying the actual underlying DOM/data structure.
+The workflow is sequential. Retailer scrapers produce `Product` objects. The main pipeline then handles retailer-specific deduplication, accessory filtering, product details, image acquisition, AI analysis, category reports, email delivery, and seen-product persistence.
 
-## 3. Camoufox / Windows Environment Warning
-Operational constraint: Camoufox can be aggressively blocked by Windows Smart App Control.
-- Disabling Smart App Control is not a trivial toggle on Windows; re-enabling it may require a clean Windows installation.
-- Therefore, avoid casually recommending that developers disable Smart App Control on their primary Windows installation.
-- Prefer running Camoufox in a native Linux environment or WSL2, where appropriate.
+Keep the shared `Product` model and `BaseScraper` interface stable when adding a retailer. The PDF renderer, analyzer, storage, and email sender are shared across brands.
 
-This is an environment/operational constraint, not something that should be "fixed" by rewriting the scraper.
+## Candidate pool and final quota
 
-## 4. Retailer-Specific Identifier Architecture
-Important distinction between retailers regarding deduplication:
-- **H&M and Zara**: Their current implementations have relatively stable product identification. Multiple regional URLs are deliberately handled. Their product identifiers are sufficiently reliable for the current deduplication architecture.
-- **Other retailers**: Do not blindly copy the H&M/Zara identifier strategy to every retailer.
-- Some retailers require navigating deeper into product data/pages to obtain a true SKU/article identifier.
-- For some retailers, the current implementation deliberately uses URL slugs as unique identifiers because they are more reliable within that retailer's current structure.
-- **Note on Variants**: There was a specific duplicate-product problem where the same garment in different colors could appear with different identifiers (including `_1819` style differences in the identifier/string). Solving this properly would require substantial retailer-specific scraping/normalization changes and should not be treated as a simple global deduplication fix.
-- **Rule**: Before changing identifiers, understand the retailer's product URL, SKU, variant, and color structure.
+These limits serve different purposes:
 
-## 5. Candidate Pool vs Final Garment Quota
-Critical architectural decision:
-- `MAX_CANDIDATE_POOL_SIZE` controls how many candidates the scrapers collect from the listing pages.
-- `MAX_ITEMS_PER_CATEGORY` controls the number of valid garments ultimately accepted per category.
+- `max_candidate_pool_size` limits listing candidates collected before filtering.
+- `max_items_per_category` limits accepted garments for one category at one retailer.
+- `max_pages_per_category` applies to scrapers that paginate by page number. Scroll-based and retailer-specific listing flows may use their own steps.
 
-These are intentionally different limits. The candidate pool exists so deduplication and garment filtering can happen *after* extraction without coupling scrapers to AI/storage logic. 
-- Do not revert the architecture to stopping extraction at `MAX_ITEMS_PER_CATEGORY`.
-- The final garment quota is evaluated **per category**, not globally across the retailer. A global break after reaching the quota is incorrect because it can cause later categories (for example Women after Men) to disappear from the report entirely.
+The current `retailers.yaml` values are 12 candidates, 2 pages where applicable, and 2 final garments per category and retailer. Retailer settings override the matching environment variable. Do not replace these separate limits with one global stop condition. A retailer's Men quota must not prevent its Women category from being processed.
 
-## 6. Deduplication / seen_products
-- Scraped candidates are evaluated against previously seen product IDs.
-- Do not casually move when products are marked as seen within the pipeline.
-- Be careful when changing failure handling because a product that fails later in the pipeline (e.g., image acquisition or AI analysis) intentionally remains eligible for a future run by not being saved to `seen_products`.
+## Identifiers and deduplication
 
-## 7. AI Classification Boundary
-AI garment classification is intentionally separated from scraper extraction.
-- Scrapers should primarily extract product data.
-- AI classification happens in the pipeline *after* candidate collection.
-- Do not couple retailer scrapers directly to storage or NVIDIA AI validation unless there is a strong architectural reason.
-- Avoid introducing AI into deterministic extraction logic unnecessarily.
+Seen IDs are stored per retailer in `data/seen_products.json`. Identifier formats differ by site. H&M uses article codes; Zara extracts IDs from product URLs; other scrapers may need a site-specific SKU or URL slug. Color variants can have different IDs, so do not assume one global normalization rule is safe.
 
-## 8. Regional Retailer Behavior
-- **H&M and Zara** have meaningful regional handling in the current implementation.
-- For other retailers, regional/global URLs were investigated. In particular, **Shein and Boss** did not show meaningful product-catalog differences across their regional/global URLs; those URLs appeared primarily related to telemetry/localization.
-- Do not assume every retailer requires the same country-specific scraping implementation. Verify a retailer's actual product behavior before introducing regional branching.
+Products should only be marked as seen after their category report is generated and email delivery succeeds or is intentionally skipped because SMTP is unconfigured. A PDF or email failure should leave those products eligible for a later run.
 
-## 9. Production Logging
-Current logs are intentionally descriptive and useful during development/debugging, which makes them potentially very verbose.
-- At production frequency, logs can accumulate to hundreds of MB over time.
-- Production deployment should therefore include log rotation, retention limits, reduced verbosity, or another appropriate log-management strategy.
-- Do not simply remove useful diagnostics without considering debugging/operational needs.
+## Browser behavior and access blocks
 
-## 10. PDF / Output Pipeline
-- Generated PDFs, screenshots, runtime state, and logs are local/generated artifacts and should not normally be committed to Git.
-- Runtime directories are preserved with `.gitkeep` where required.
+The current scraper flows use Camoufox browser sessions. H&M includes explicit checks for `Access Denied` responses, and its source comments identify Akamai blocking as the reason Camoufox was selected. Camoufox handles browser fingerprint properties at its C++ implementation layer. This is browser-engine code, not an operating-system kernel patch, and it does not guarantee access to a retailer site.
 
-## 11. Retailer-Specific Scrapers Are Not Interchangeable
-The six retailer scrapers should not be treated as six instances of one generic scraper.
-- Their pagination, infinite scrolling, identifiers, regional behavior, DOM structure, and product-detail extraction can differ substantially.
-- Shared abstractions should only be introduced when the underlying behavior is genuinely shared.
+`BaseScraper._simulate_human_behavior` adds a randomized wait, pointer movement, and occasional scrolling. These are project-level browsing behaviors. Retailer scrapers also implement their own lazy loading, pagination, and DOM extraction. Preserve the site-specific approaches unless live page inspection shows they need to change.
 
-## 12. Before Making Scraper Changes — Checklist
-- [ ] Inspect the current scraper completely.
-- [ ] Understand its identifier strategy.
-- [ ] Understand listing pagination/infinite-scroll behavior.
-- [ ] Understand product-detail extraction.
-- [ ] Check regional behavior.
-- [ ] Check interaction with `seen_products`.
-- [ ] Check candidate-pool/category-quota behavior.
-- [ ] Test with real retailer pages before replacing working logic.
-- [ ] Prefer localized changes over broad refactors.
-- [ ] Verify both Men and Women outputs after pipeline changes.
+Zara has its own listing and detail strategy. It loads lazy content, extracts IDs from product URL patterns, checks `zara.analyticsData`, and reads image and description metadata from the product page. Do not replace it with a generic selector without verifying current Zara markup.
 
-## 13. Known Historical Problems Already Solved
-- **Duplicate handling / seen_products**: Prevented falsely flagging failed products as completed.
-- **Candidate-pool architecture**: Separated extraction limits from final validity quotas.
-- **Per-category garment quotas**: Prevented one category from exhausting the limit for the entire retailer.
-- **Missing Women's report**: Fixed an incorrect global quota break that destroyed subsequent category candidates.
-- **Zara/H&M regional handling**: Consolidated overlapping logic for multi-region processing.
-- **Retailer-specific identifier differences**: Preserved stable unique identifiers (e.g., URL slugs vs DOM attributes) natively suited to each site.
-- **Non-garment filtering**: Combined deterministic keyword filtering with AI validation.
+Camoufox may be blocked by Windows Smart App Control. Do not recommend disabling that protection as a routine setup step. Use Linux or WSL2 when the local Windows environment prevents Camoufox from launching.
+
+## AI request behavior and fallbacks
+
+`AIRequestManager` processes visual-analysis items sequentially, adds the configured delay between items, records batch outcomes, and catches unexpected item-level failures. `NvidiaNimAnalyzer` owns rate-limit retries and exponential backoff for visual-analysis requests. Other API errors produce an error analysis for that product.
+
+Garment classification is a separate direct request in `main.py`. If NVIDIA is not configured or classification fails, the classifier defaults to treating the item as a garment. If visual analysis has no API key, it returns default mock analysis. Do not describe all AI calls as sharing the same retry behavior.
+
+For products that go through a fresh visual-analysis call, the analyzer wrapper clears `raw_page_text` after analysis returns. Product objects and analysis results remain available for report generation.
+
+## PDF and generated files
+
+`src/reporter.py` is the shared PDF presentation layer. It creates one PDF per category and builds the cover, contents, retailer sections, product cards, images, and AI visual-analysis blocks. Keep brand-specific extraction out of the report renderer where possible.
+
+At the beginning of a run, the scraper cleanup removes old `.png`, `.jpg`, and `.jpeg` files from the configured image folder. It does not delete generated PDFs, JSON state, or logs. These runtime outputs are ignored by Git. Logs have no built-in rotation, so long-running deployments should set up retention or rotation outside the application.
+
+## Adding a retailer
+
+1. Add the retailer name, logo, enabled flag, category URLs, and optional limits to `retailers.yaml`.
+2. Implement its listing, detail, and image methods in a dedicated module under `src/scrapers/`.
+3. Register the class in `src/scrapers/__init__.py`.
+4. Add unit tests for its configuration and stable product identifier extraction.
+
+The scraper should return the common `Product` model. Existing storage, filtering, analysis, email, and PDF stages can then process it without adding a brand-specific report generator.
+
+## Before changing a scraper
+
+- Inspect the complete retailer module and its current YAML entry.
+- Confirm its listing pagination or scrolling behavior.
+- Confirm product ID and color-variant behavior.
+- Check product-detail extraction and image acquisition separately.
+- Preserve the distinction between candidate pool and final garment quota.
+- Confirm that both Men and Women categories can reach their own quota.
+- Keep failed image, PDF, and email items eligible for retry.
+- Run unit tests. Test live retailer pages separately when validating selectors or access behavior.

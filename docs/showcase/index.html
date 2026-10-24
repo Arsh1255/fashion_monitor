@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Fashion Trend Monitor | Men's Report Preview</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #202124; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header {
+      min-height: 56px; padding: 10px 18px; display: flex; align-items: center;
+      justify-content: space-between; gap: 16px; background: #fff; border-bottom: 1px solid #d9dee5;
+    }
+    h1 { margin: 0; font-size: 16px; font-weight: 650; }
+    nav { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; }
+    a { color: #1458c8; }
+    main { padding: 0 12px 12px; }
+    .viewer {
+      display: block; width: 100%; height: calc(100vh - 80px); min-height: 480px;
+      border: 0; background: #e8ebef;
+    }
+    @media (max-width: 540px) {
+      header { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .viewer { height: calc(100vh - 112px); min-height: 400px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fashion Trend Monitor | Men's Report</h1>
+    <nav aria-label="Report links">
+      <a href="./fashion-trend-report-men-2026-10-25.pdf" download>Download PDF</a>
+      <a href="../../">Back to repository</a>
+    </nav>
+  </header>
+  <main>
+    <iframe
+      class="viewer"
+      src="./fashion-trend-report-men-2026-10-25.pdf#view=FitH"
+      title="Scrollable 14-page men's fashion trend report"
+      loading="eager">
+      <p>Your browser cannot display the PDF inline. <a href="./fashion-trend-report-men-2026-10-25.pdf">Open the report PDF</a>.</p>
+    </iframe>
+  </main>
+</body>
+</html>

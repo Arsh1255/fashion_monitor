@@ -29,7 +29,7 @@ The workflow is sequential. Each retailer scraper returns the shared `Product` m
 
 This sample came from a live run on 25 October 2026. It contains 12 men's products from six retailers across 14 pages. Select the cover preview to open the complete PDF in GitHub's scrollable document viewer.
 
-[![Cover of the sample men's trend report](docs/showcase/fashion-trend-report-men-cover-01.jpg)](docs/showcase/fashion-trend-report-men-2026-10-25.pdf)
+[![Cover of the sample men's trend report](https://raw.githubusercontent.com/Arsh1255/fashion_monitor/main/docs/showcase/fashion-trend-report-men-cover-01.jpg)](docs/showcase/fashion-trend-report-men-2026-10-25.pdf)
 
 ## What makes the scraping retailer-specific
 

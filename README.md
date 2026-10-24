@@ -25,6 +25,12 @@ flowchart TD
 
 The workflow is sequential. Each retailer scraper returns the shared `Product` model, so the storage, analysis, and PDF stages can use the same downstream pipeline.
 
+## Sample report
+
+This sample came from a live run on 25 October 2026. It contains 12 men's products from six retailers across 14 pages. Select the cover preview to open the complete PDF in GitHub's scrollable document viewer.
+
+[![Cover of the sample men's trend report](docs/showcase/fashion-trend-report-men-cover-01.jpg)](docs/showcase/fashion-trend-report-men-2026-10-25.pdf)
+
 ## What makes the scraping retailer-specific
 
 Retailer sites expose different listing structures, product identifiers, pagination, and detail data. The scrapers share a small interface, but keep the extraction logic that fits each site.
@@ -51,6 +57,10 @@ Each retailer currently has these values in `retailers.yaml`:
 Candidate and final garment limits are separate. The candidate pool gives the pipeline room to remove previously seen items and accessories before filling the final garment quota. Scrapers that use scrolling or retailer-specific pagination retain those mechanics while respecting the candidate cap.
 
 ## Product and resource lifecycle
+
+Before accessory filtering, the pipeline removes products already recorded for that retailer in `data/seen_products.json`. Scrapers map each site's product key into the shared `Product.art_no` field. Depending on the site, that key is an article code, SKU, numeric product ID, or URL-derived identifier. For example, H&M uses its article code, Lacoste reads a SKU, and Zara and SHEIN parse product IDs from product URLs. Some scrapers use a URL path segment when the site does not expose a more suitable identifier. These IDs are scoped by retailer, so the same string from two different stores does not collide.
+
+The pipeline then checks product names and URLs against a list of accessory and non-garment terms. Candidates that pass this deterministic filter are classified by NVIDIA NIM as garments or accessories. Classification requests run sequentially and stop for a category once its accepted garment limit is full. If classification is unavailable or fails, the current fallback treats the candidate as a garment, so this failure path can admit an accessory.
 
 At the start of a run, the shared image folder is cleared of old `.png`, `.jpg`, and `.jpeg` files. The current run downloads product images there for analysis and PDF generation. The images remain available after the run and are removed at the next run.
 
